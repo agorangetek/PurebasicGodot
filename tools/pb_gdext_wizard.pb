@@ -18,15 +18,19 @@
 ; per method - plus a typed wrapper for the signatures we can express.
 ;
 ; USAGE
-;     ./gen_binds --classes Node Node2D --out generated/Node2D.pbi
-;     ./gen_binds --check generated/*.pbi
-;     ./gen_binds --stats
+;     tools/pb_gdext_wizard --classes Node Node2D --out generated/Node2D.pbi
+;     tools/pb_gdext_wizard --check generated/*.pbi
+;     tools/pb_gdext_wizard --stats
 ;
-; TWO PURBASIC RULES THIS FILE ITSELF OBEYS, both learned the hard way:
+; TWO PURBASIC NOTES THIS FILE ITSELF OBEYS:
 ;   * structures are passed BY POINTER only (`Procedure Foo(v.Vec)` is a
 ;     syntax error) - hence *mi.MethodInfo everywhere below;
-;   * there is no line continuation, so long expressions are built up over
-;     several statements instead of wrapping.
+;   * long expressions are built up over several statements for READABILITY.
+;     This said there is no line continuation. There is: after an operator,
+;     with or without an open parenthesis, both verified by compiling them.
+;     Nothing below ever depended on the wrong version, but it did send a
+;     reader hunting a message-construction bug that turned out to be a
+;     scoping problem, which is what a confidently wrong note costs.
 ; ===========================================================================
 
 EnableExplicit
