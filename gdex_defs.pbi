@@ -165,11 +165,15 @@ IncludeFile "gdex_types.pbi"
 #GDEX_SHAPE_2IF_I = 20
 #GDEX_SHAPE_2II_I = 21
 
-#GDEX_MAX_PROPS       = 32
-#GDEX_MAX_METHODS     = 64
+#GDEX_MAX_PROPS       = 64
+#GDEX_MAX_METHODS     = 128
 #GDEX_MAX_CLASSES     = 8
 #GDEX_MAX_SINGLETONS  = 8
-#GDEX_MAX_SIGNALS     = 8
+#GDEX_MAX_SIGNALS     = 16
+; NOT a table bound like the four above: this one is a SHAPE. A signal's
+; arguments are typed in ADD_SIGNAL and passed to emit_signal as separate
+; pointer parameters, so raising it changes two call signatures rather than
+; the size of an array. See "Caps per class" in the README.
 #GDEX_MAX_SIGNAL_ARGS = 4
 #GDEX_MAX_METHOD_ARGS = 4 ; a bound_method may declare at most this many
 #GDEX_NO_TYPE         = -1 ; "this argument was not supplied"

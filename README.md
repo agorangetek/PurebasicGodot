@@ -415,11 +415,38 @@ the same build-time choice godot-cpp makes. Integer types (`Vector2i`,
 
 ### A note on the per-class tables
 
-`#GDEX_MAX_PROPS` / `#GDEX_MAX_METHODS` bound a class's tables, and they fill
-faster than they look: a property expands into **two** methods (`get_` and
-`set_`). They are 32 and 64. Overflow is reported through Godot's
-`print_error` rather than dropped silently — see gotcha 3 below for why that
-matters.
+### Caps per class
+
+A class's tables are fixed arrays inside its `GDClassInfo`, so the caps are
+paid for in static data by every registered class whether or not it uses them.
+They fill faster than they look, too: a property expands into **two** methods
+(`get_` and `set_`).
+
+| Cap | Value | Entry | Cost |
+|---|---|---|---|
+| `#GDEX_MAX_PROPS` | 64 | 48 bytes | 3 KB |
+| `#GDEX_MAX_METHODS` | 128 | 72 bytes | 9 KB |
+| `#GDEX_MAX_SIGNALS` | 16 | 64 bytes | 1 KB |
+
+That is about 13 KB per class — with `#GDEX_MAX_CLASSES` at 8, roughly 100 KB of
+static data for a full extension. Raising a number is therefore cheap; the caps
+are a bound, not a budget.
+
+The first two are coupled, which is easy to miss: a property costs **two**
+methods, so `#GDEX_MAX_METHODS` must be at least twice `#GDEX_MAX_PROPS` or the
+property cap can never be reached — the method table fills first and the failed
+getter/setter binding then rejects the property. At 128 and 64 the pair is
+exactly balanced. Measured on a 35-property class (70 methods), which overflows
+the old 32/64 pair with six `too many methods` reports and registers cleanly
+under the new one.
+
+Overflow is reported through Godot's `print_error` rather than dropped silently
+— see gotcha 3 below for why that matters.
+
+`#GDEX_MAX_SIGNAL_ARGS` (4) is deliberately **not** in that table. It is a
+*shape*, not a table bound: a signal's arguments are typed in `ADD_SIGNAL` and
+passed to `emit_signal` as separate pointer parameters, so raising it means
+extending two call signatures rather than sizing an array.
 
 ## Generating the bindings
 
@@ -794,7 +821,8 @@ Two fixes, both worth keeping:
   `Debug`. **`Debug` is compiled out of a dylib**, so the original "too many
   methods" warning could never have been seen.
 
-The limits are now 32 properties / 64 methods.
+The limits are now 64 properties / 128 methods, and because overflow reports
+loudly the failure mode above cannot recur silently.
 
 Practical corollary: when running headless, pass `--quit-after`, or a script
 error leaves a process with no main loop running indefinitely.
@@ -999,5 +1027,8 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       would work but has to be kept in step with the entry point's includes,
       which trades one silent failure for another. Until then the report above
       is what makes the omission announce itself.
-- [ ] **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
-      properties.
+- [x] **Caps per class:** now 16 signals, 128 methods, 64 properties, with the
+      cost and the reasoning written down under [Caps per
+      class](#caps-per-class). `#GDEX_MAX_SIGNAL_ARGS` stays at 4: it is a shape
+      shared with `emit_signal` rather than a table bound, and nothing has needed
+      more.

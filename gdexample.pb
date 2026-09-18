@@ -146,11 +146,10 @@ EndProcedure
 ; The dylib entry point Godot calls. The exported name must match entry_symbol
 ; in gdex.gdextension.
 GDEX_EXTENSION(gdexample_library_init)
-
 ; IDE Options = PureBasic 6.41 - C Backend (MacOS X - arm64)
 ; ExecutableFormat = Shared .dylib
-; CursorPosition = 147
-; FirstLine = 110
+; CursorPosition = 142
+; FirstLine = 95
 ; Folding = --
 ; Optimizer
 ; EnableThread
