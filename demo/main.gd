@@ -122,6 +122,7 @@ func _ready() -> void:
 	print("--- builtin methods and @GlobalScope ---")
 	print("  Vector2(3,4).length()            = ", b.probe_length(Vector2(3.0, 4.0)))
 	print("  @GlobalScope.deg_to_rad(180.0)   = ", b.probe_deg_to_rad(180.0))
+	print("  Vector2(3,4).normalized()        = ", b.probe_normalized(Vector2(3.0, 4.0)))
 
 	# --- a spread of other builtins, same mechanism ------------------------
 	print("--- other builtins, all through the generic path ---")

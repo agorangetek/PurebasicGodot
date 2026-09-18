@@ -242,7 +242,7 @@ unsigned.
 | `gdex_class.pbi` | The framework: `RegisterGDClass`, every generic callback, the macros. |
 | `tools/pb_gdext_wizard.pb` | The generator, in PureBasic. `--outdir`, `--out`, `--check`, `--stats`. |
 | `generate-bindings.sh` | The one-time step. Writes `generated/` from the API dump. |
-| `generated/` | 870 self-contained files, one per engine class, produced by `generate-bindings.sh`. Not tracked in this project's repo; `build.sh` never touches it. |
+| `generated/` | Self-contained files produced by `generate-bindings.sh`: 870 engine classes, 34 builtin types and `GlobalScope.pbi`. Not tracked in this project's repo; `build.sh` never touches it. |
 | `generated/helpers/` | The one hand-written thing under `generated/`: the godot-cpp-shaped class surface. See [The helper layer](#the-helper-layer). |
 | `gdex_bouncer.pbi` | `GDBouncer`, a second Node2D class with its own `bounced` signal. |
 | `gdex_ticker.pbi` | `GDTicker`, a Node installed as the `GDNativeTicker` singleton. |
@@ -712,25 +712,31 @@ Engine *classes* live in ClassDB, which is why they need `Register_<Class>_Binds
 and a level to wait for. A builtin type's methods and the `@GlobalScope`
 functions are not in ClassDB at all — Godot hands them out by type plus hash, and
 they exist at every initialization level. So there is nothing to list in
-`GDEX_ResolveBinds()` and nothing to wait for:
+`GDEX_ResolveBinds()` and nothing to wait for, and the generator emits a module
+per builtin type plus one for `GlobalScope`:
 
 ```purebasic
-; Vector2.length()
-Protected mb.i = GDEX_BuiltinMethodBind(#VECTOR2, "length", 466405837)
-Protected f.GDExtensionPtrBuiltInMethod = mb
-Protected r.d
-f(*v, 0, @r, 0)                       ; result comes back through @r
-
-; @GlobalScope.deg_to_rad(float)
-Protected uf.i = GDEX_UtilityFunctionBind("deg_to_rad", 2140049587)
-Protected g.GDExtensionPtrUtilityFunction = uf
-Protected Dim a.i(0)
-a(0) = *deg
-g(@r, @a(0), 1)
+IncludeFile "generated/Vector2.pbi"
+IncludeFile "generated/GlobalScope.pbi"
+...
+Vector2::_length(*v)                    ; -> float
+Vector2::_normalized(*v, *out)          ; -> Vector2, through *out
+GlobalScope::_deg_to_rad(x)             ; -> float
 ```
 
+**Every builtin and utility wrapper carries a leading underscore**, and that is
+not cosmetic. The class wrappers only rename the four names measured to collide
+with PureBasic keywords, but these collide far more widely —
+`floor`, `ceil`, `round`, `abs`, `min`, `max`, `sign`, `dot`, `lerp`, `length`,
+`str`, `hex`, `find`, `insert`, `left`, `right`, `replace` are all PureBasic
+commands — and the compiler reports only the first failure per build, so a
+measured list is not obtainable here. One unconditional prefix is cheaper than a
+list that is wrong in a way nobody notices until someone calls
+`Vector2.floor()`.
+
 Both call conventions are one array of argument pointers — the same shape the
-generic dispatcher uses — so a callee's own signature is all that differs.
+generic dispatcher uses — so a callee's own signature is all that differs from a
+class wrapper.
 
 **Two traps are worth knowing, both of which cost a crash here.** The recovered
 `gdextension_interface.pbi` records parameter *names*, not types, and these two
@@ -1082,12 +1088,14 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       and `GDEX_UtilityFunctionBind` resolve them by type plus hash, needing no
       registration, and both are verified end to end (`Vector2(3,4).length()`
       gives 5.0; `deg_to_rad(180)` gives π).
-- [ ] **Generating those wrappers.** The runtime supports every builtin method
-      and utility function now, but nothing generates typed wrappers for them
-      yet, so each call is written by hand as above. 634 of the 999 builtin
-      methods and 77 of the 114 utility functions are expressible in the
+- [x] **Those wrappers are generated.** One module per builtin type plus
+      `GlobalScope.pbi`, resolve-on-first-use so nothing needs registering:
+      `Vector2::_length(*v)`, `Vector2::_normalized(*v, *out)`,
+      `GlobalScope::_deg_to_rad(x)`, all verified end to end. 634 of the 999
+      builtin methods and 77 of the 114 utility functions are expressible in the
       current type set; the rest want `Variant`, `Callable` or a `Packed*Array`
-      and are unreachable until those are driven.
+      and get no wrapper until those are driven — the same rule as an engine
+      class method.
 - [ ] **One virtual.** `_process` is wired; no other engine virtual is.
 - [x] **Forgetting a resolver is no longer silent.** A wrapper whose bind was
       never resolved reports `class::method` and the remedy, once per method.

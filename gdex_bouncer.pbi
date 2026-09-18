@@ -259,38 +259,25 @@ EndProcedure
 ; same shape the generic dispatcher already uses - so a callee's own signature
 ; is the only thing that differs.
 
-; Vector2.length()   [builtin method, no arguments, float result]
+; Vector2.length() and @GlobalScope.deg_to_rad(), through the generated
+; wrappers rather than by hand. Each module resolves its own pointers on first
+; use, so neither appears in GDEX_ResolveBinds().
 ;
-; The callee's shape is the framework's, not a free choice: a method with one
-; argument and a value result is the (*self, *in, *out) shape, so the result is
-; written through *out rather than returned. Declaring it as a value-returning
-; two-parameter procedure compiles and silently does nothing useful - the
-; framework's third argument is ignored and *out is never written.
+; Remember the shape rule the hard way (it cost a silent wrong answer once): a
+; method with one argument and a value result is the (*self, *in, *out) shape,
+; so the result is written through *out rather than returned.
 Procedure GDBouncer_probe_length(*self.GDBouncer, *v.GDVector2, *out)
-  Protected mb.i = GDEX_BuiltinMethodBind(#VECTOR2, "length", 466405837)
-  If Not mb
-    PokeD(*out, -1.0)
-    ProcedureReturn
-  EndIf
-  Protected f.GDExtensionPtrBuiltInMethod = mb
-  Protected r.d
-  f(*v, 0, @r, 0)
-  PokeD(*out, r)
+  PokeD(*out, Vector2::_length(*v))
 EndProcedure
 
-; @GlobalScope.deg_to_rad(float) -> float   [utility function, no instance]
 Procedure GDBouncer_probe_deg_to_rad(*self.GDBouncer, *deg, *out)
-  Protected uf.i = GDEX_UtilityFunctionBind("deg_to_rad", 2140049587)
-  If Not uf
-    PokeD(*out, -1.0)
-    ProcedureReturn
-  EndIf
-  Protected f.GDExtensionPtrUtilityFunction = uf
-  Protected Dim a.i(0)
-  a(0) = *deg
-  Protected r.d
-  f(@r, @a(0), 1)
-  PokeD(*out, r)
+  PokeD(*out, GlobalScope::_deg_to_rad(PeekD(*deg)))
+EndProcedure
+
+; Vector2::_normalized() -> Vector2, a structure result the wrapper writes
+; straight into the caller's *out rather than returning.
+Procedure GDBouncer_probe_normalized(*self.GDBouncer, *v.GDVector2, *out.GDVector2)
+  Vector2::_normalized(*v, *out)
 EndProcedure
 
 Procedure GDBouncer_bind()
@@ -333,6 +320,7 @@ Procedure GDBouncer_bind()
   ; Not engine-class calls: a builtin type's method and a @GlobalScope function.
   ClassDB::bind_method(D_METHOD("probe_length", "v"), @GDBouncer_probe_length(), #FLOAT, #VECTOR2)
   ClassDB::bind_method(D_METHOD("probe_deg_to_rad", "deg"), @GDBouncer_probe_deg_to_rad(), #FLOAT, #FLOAT)
+  ClassDB::bind_method(D_METHOD("probe_normalized", "v"), @GDBouncer_probe_normalized(), #VECTOR2, #VECTOR2)
 
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")

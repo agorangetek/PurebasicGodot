@@ -16,6 +16,9 @@ IncludeFile "gdex_api.pbi"
 IncludeFile "generated/Node2D.pbi"
 IncludeFile "generated/Object.pbi"
 IncludeFile "generated/Engine.pbi"
+; Builtin types and @GlobalScope: not ClassDB classes, so nothing to register.
+IncludeFile "generated/Vector2.pbi"
+IncludeFile "generated/GlobalScope.pbi"
 ; The helper layer: generic Variant + signal emission, over the generated binds
 ; above. Its own folder under generated/, so it is easy to find and to drop.
 IncludeFile "gdex_class.pbi"

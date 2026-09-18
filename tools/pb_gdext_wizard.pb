@@ -202,6 +202,8 @@ EndProcedure
 Global gJson.s
 Global gRoot
 Global gClasses
+Global gBuiltins
+Global gUtility
 Global NewMap gClassIdx.i()
 Global NewMap gHash.i()
 Global gClassCount.l = 0
@@ -319,6 +321,8 @@ Procedure LoadApi(path.s)
   EndIf
   gRoot = JSONValue(0)
   gClasses = JGArr(gRoot, "classes")
+  gBuiltins = JGArr(gRoot, "builtin_classes")
+  gUtility = JGArr(gRoot, "utility_functions")
 
   Protected n = JSONArraySize(gClasses)
   Protected i, c, methods, j, m
@@ -375,7 +379,7 @@ Structure MethodInfo
   skipWhy.s
 EndStructure
 
-Procedure ReadMethod(m, *mi.MethodInfo)
+Procedure ReadMethod(m, *mi.MethodInfo, useReturnType.l = 0)
   *mi\name = JGStr(m, "name")
   *mi\hash = JGInt(m, "hash", -1)
   *mi\isConst = JGBool(m, "is_const")
@@ -406,10 +410,20 @@ Procedure ReadMethod(m, *mi.MethodInfo)
     Next
   EndIf
 
-  Protected rv = GetJSONMember(m, "return_value")
-  If rv And JSONType(rv) = #PB_JSON_Object
-    *mi\retGodot = JTypeOf(rv)
-    *mi\retPb = PbTypeOf(*mi\retGodot)
+  ; A builtin method and a utility function state their return as a bare
+  ; return_type string; an engine class method nests it in return_value.
+  If useReturnType
+    Protected rt.s = JGStr(m, "return_type")
+    If rt <> ""
+      *mi\retGodot = rt
+      *mi\retPb = PbTypeOf(rt)
+    EndIf
+  Else
+    Protected rv = GetJSONMember(m, "return_value")
+    If rv And JSONType(rv) = #PB_JSON_Object
+      *mi\retGodot = JTypeOf(rv)
+      *mi\retPb = PbTypeOf(*mi\retGodot)
+    EndIf
   EndIf
 
   ; Decidable without Godot, so decided once, here.
@@ -875,6 +889,420 @@ Procedure CollectClasses(List requested.s(), List out.s())
   EndIf
 EndProcedure
 
+; ---------------------------------------------------------------------------
+; BUILTIN TYPES AND @GlobalScope
+;
+; A builtin type's methods and the utility functions are not in ClassDB. Godot
+; hands them out by type plus hash, and they exist at every initialization
+; level, so their wrappers need no Register_*_Binds() entry and nothing to wait
+; for: each module resolves its own pointers on first use through a resolver the
+; framework injects at top level.
+;
+; The call convention is one array of argument pointers - the same shape the
+; framework's generic shape uses - so a wrapper's own signature is all that
+; differs from a class wrapper.
+; ---------------------------------------------------------------------------
+
+; The Variant type number the ABI fixes for a builtin class. A table rather than
+; the array index on purpose: builtin_classes in the dump OMITS Object, which the
+; enum has at 24, so every entry from Callable onwards sits one below its number.
+Procedure.i BuiltinVariantType(name.s)
+  Select name
+    Case "Nil"                 : ProcedureReturn 0
+    Case "bool"                : ProcedureReturn 1
+    Case "int"                 : ProcedureReturn 2
+    Case "float"               : ProcedureReturn 3
+    Case "String"              : ProcedureReturn 4
+    Case "Vector2"             : ProcedureReturn 5
+    Case "Vector2i"            : ProcedureReturn 6
+    Case "Rect2"               : ProcedureReturn 7
+    Case "Rect2i"              : ProcedureReturn 8
+    Case "Vector3"             : ProcedureReturn 9
+    Case "Vector3i"            : ProcedureReturn 10
+    Case "Transform2D"         : ProcedureReturn 11
+    Case "Vector4"             : ProcedureReturn 12
+    Case "Vector4i"            : ProcedureReturn 13
+    Case "Plane"               : ProcedureReturn 14
+    Case "Quaternion"          : ProcedureReturn 15
+    Case "AABB"                : ProcedureReturn 16
+    Case "Basis"               : ProcedureReturn 17
+    Case "Transform3D"         : ProcedureReturn 18
+    Case "Projection"          : ProcedureReturn 19
+    Case "Color"               : ProcedureReturn 20
+    Case "StringName"          : ProcedureReturn 21
+    Case "NodePath"            : ProcedureReturn 22
+    Case "RID"                 : ProcedureReturn 23
+    Case "Callable"            : ProcedureReturn 25
+    Case "Signal"              : ProcedureReturn 26
+    Case "Dictionary"          : ProcedureReturn 27
+    Case "Array"               : ProcedureReturn 28
+    Case "PackedByteArray"     : ProcedureReturn 29
+    Case "PackedInt32Array"    : ProcedureReturn 30
+    Case "PackedInt64Array"    : ProcedureReturn 31
+    Case "PackedFloat32Array"  : ProcedureReturn 32
+    Case "PackedFloat64Array"  : ProcedureReturn 33
+    Case "PackedStringArray"   : ProcedureReturn 34
+    Case "PackedVector2Array"  : ProcedureReturn 35
+    Case "PackedVector3Array"  : ProcedureReturn 36
+    Case "PackedColorArray"    : ProcedureReturn 37
+    Case "PackedVector4Array"  : ProcedureReturn 38
+  EndSelect
+  ProcedureReturn -1
+EndProcedure
+
+; A builtin method's parameters. Unlike a class method there is no *self to
+; begin with: an instance method takes it, a static one has no instance at all.
+Procedure.s BuiltinParams(*mi.MethodInfo)
+  Protected p.s = ""
+  If Not *mi\isStatic
+    p = "*self"
+  EndIf
+  Protected i
+  For i = 0 To *mi\argCount - 1
+    If p <> ""
+      p + ", "
+    EndIf
+    If IsStructPb(*mi\argPb[i])
+      p + "*p_" + *mi\argName[i]
+    Else
+      p + "p_" + *mi\argName[i] + "." + *mi\argPb[i]
+    EndIf
+  Next
+  If IsStructPb(*mi\retPb)
+    If p <> ""
+      p + ", "
+    EndIf
+    p + "*out"
+  EndIf
+  ProcedureReturn p
+EndProcedure
+
+; A builtin or utility wrapper ALWAYS takes a leading underscore, not only when
+; it collides. The reason is that the collision set cannot be measured from here
+; the way the class wrappers' four were: these names include floor, ceil, round,
+; abs, min, max, sign, dot, lerp, length, str, hex, find, insert, left, right,
+; replace and more, all of which are PureBasic commands, and the compiler reports
+; only the first failure per build. One unconditional prefix is cheaper than a
+; list that is wrong in a way nobody notices until someone calls Vector2.floor().
+Procedure.s BuiltinWrapperName(mn.s)
+  ProcedureReturn "_" + mn
+EndProcedure
+
+Procedure.s RetDefault(*mi.MethodInfo)
+  If IsStructPb(*mi\retPb) Or *mi\retPb = ""
+    ProcedureReturn "      ProcedureReturn"
+  ElseIf *mi\retPb = "d"
+    ProcedureReturn "      ProcedureReturn 0.0"
+  EndIf
+  ProcedureReturn "      ProcedureReturn 0"
+EndProcedure
+
+; The resolve-then-call prologue both emitters share, minus the call itself.
+Procedure EmitResolveGuard(List Lines.s(), cls.s, *mi.MethodInfo, vtype.l, isUtility.l)
+  Protected mn.s = Ident(*mi\name)
+  Protected bind.s = "gdb_" + mn
+  Add(Lines(), "    If Not " + bind)
+  Add(Lines(), "      Protected rs.LocalResolveFn = resolve_fn")
+  Add(Lines(), "      If rs")
+  If isUtility
+    Add(Lines(), "        " + bind + " = rs(" + Chr(34) + *mi\name + Chr(34) + ", " + Str(*mi\hash) + ")")
+  Else
+    Add(Lines(), "        " + bind + " = rs(" + Str(vtype) + ", " + Chr(34) + *mi\name + Chr(34) + ", " + Str(*mi\hash) + ")")
+  EndIf
+  Add(Lines(), "      EndIf")
+  Add(Lines(), "    EndIf")
+  Add(Lines(), "    If Not " + bind)
+  Add(Lines(), "      Protected rf.LocalFailFn = fail_fn")
+  Add(Lines(), "      If rf")
+  Add(Lines(), "        rf(" + Chr(34) + cls + Chr(34) + ", " + Chr(34) + *mi\name + Chr(34) + ")")
+  Add(Lines(), "      EndIf")
+  Add(Lines(), RetDefault(*mi))
+  Add(Lines(), "    EndIf")
+EndProcedure
+
+Procedure EmitBuiltinWrapper(List Lines.s(), cls.s, vtype.l, *mi.MethodInfo)
+  Protected mn.s = Ident(*mi\name)
+  Protected bind.s = "gdb_" + mn
+  Protected desc.s, i
+
+  For i = 0 To *mi\argCount - 1
+    If i > 0
+      desc + ", "
+    EndIf
+    desc + *mi\argGodot[i]
+  Next
+  Protected head.s = "  ; " + cls + "." + *mi\name + "(" + desc + ")"
+  If *mi\retGodot <> ""
+    head + " -> " + *mi\retGodot
+  EndIf
+  Protected flags.s = ""
+  If *mi\isConst
+    flags + "const "
+  EndIf
+  If *mi\isStatic
+    flags + "static "
+  EndIf
+  head + "   [" + flags + "hash " + Str(*mi\hash) + "]"
+  Add(Lines(), head)
+
+  Add(Lines(), "  Procedure" + WrapperRet(*mi) + " " + BuiltinWrapperName(mn) + "(" + BuiltinParams(*mi) + ")")
+  EmitResolveGuard(Lines(), cls, *mi, vtype, 0)
+  Add(Lines(), "    Protected f.LocalBuiltinMethod = " + bind)
+
+  For i = 0 To *mi\argCount - 1
+    If i = 0
+      Add(Lines(), "    Protected Dim ap.i(" + Str(*mi\argCount - 1) + ")")
+    EndIf
+    If IsStructPb(*mi\argPb[i])
+      Add(Lines(), "    ap(" + Str(i) + ") = *p_" + *mi\argName[i])
+    Else
+      Add(Lines(), "    ap(" + Str(i) + ") = @p_" + *mi\argName[i])
+    EndIf
+  Next
+
+  Protected baseE.s = "0"
+  If Not *mi\isStatic
+    baseE = "*self"
+  EndIf
+  Protected argsE.s = "0"
+  If *mi\argCount > 0
+    argsE = "@ap(0)"
+  EndIf
+
+  If IsStructPb(*mi\retPb)
+    Add(Lines(), "    f(" + baseE + ", " + argsE + ", *out, " + Str(*mi\argCount) + ")")
+  ElseIf *mi\retPb = ""
+    Add(Lines(), "    f(" + baseE + ", " + argsE + ", 0, " + Str(*mi\argCount) + ")")
+  Else
+    Add(Lines(), "    Protected rv." + *mi\retPb)
+    Add(Lines(), "    f(" + baseE + ", " + argsE + ", @rv, " + Str(*mi\argCount) + ")")
+    Add(Lines(), "    ProcedureReturn rv")
+  EndIf
+  Add(Lines(), "  EndProcedure")
+  Add(Lines(), "")
+EndProcedure
+
+Procedure EmitUtilityWrapper(List Lines.s(), name.s, *mi.MethodInfo)
+  Protected mn.s = Ident(*mi\name)
+  Protected bind.s = "gdb_" + mn
+  Protected desc.s, i
+
+  For i = 0 To *mi\argCount - 1
+    If i > 0
+      desc + ", "
+    EndIf
+    desc + *mi\argGodot[i]
+  Next
+  Protected head.s = "  ; @" + name + "." + *mi\name + "(" + desc + ")"
+  If *mi\retGodot <> ""
+    head + " -> " + *mi\retGodot
+  EndIf
+  head + "   [hash " + Str(*mi\hash) + "]"
+  Add(Lines(), head)
+
+  Protected p.s = ""
+  For i = 0 To *mi\argCount - 1
+    If p <> ""
+      p + ", "
+    EndIf
+    If IsStructPb(*mi\argPb[i])
+      p + "*p_" + *mi\argName[i]
+    Else
+      p + "p_" + *mi\argName[i] + "." + *mi\argPb[i]
+    EndIf
+  Next
+  If IsStructPb(*mi\retPb)
+    If p <> ""
+      p + ", "
+    EndIf
+    p + "*out"
+  EndIf
+
+  Add(Lines(), "  Procedure" + WrapperRet(*mi) + " " + BuiltinWrapperName(mn) + "(" + p + ")")
+  EmitResolveGuard(Lines(), "GlobalScope", *mi, 0, 1)
+  Add(Lines(), "    Protected f.LocalUtilityFn = " + bind)
+
+  For i = 0 To *mi\argCount - 1
+    If i = 0
+      Add(Lines(), "    Protected Dim ap.i(" + Str(*mi\argCount - 1) + ")")
+    EndIf
+    If IsStructPb(*mi\argPb[i])
+      Add(Lines(), "    ap(" + Str(i) + ") = *p_" + *mi\argName[i])
+    Else
+      Add(Lines(), "    ap(" + Str(i) + ") = @p_" + *mi\argName[i])
+    EndIf
+  Next
+  Protected argsE.s = "0"
+  If *mi\argCount > 0
+    argsE = "@ap(0)"
+  EndIf
+
+  If IsStructPb(*mi\retPb)
+    Add(Lines(), "    f(*out, " + argsE + ", " + Str(*mi\argCount) + ")")
+  ElseIf *mi\retPb = ""
+    Add(Lines(), "    f(0, " + argsE + ", " + Str(*mi\argCount) + ")")
+  Else
+    Add(Lines(), "    Protected rv." + *mi\retPb)
+    Add(Lines(), "    f(@rv, " + argsE + ", " + Str(*mi\argCount) + ")")
+    Add(Lines(), "    ProcedureReturn rv")
+  EndIf
+  Add(Lines(), "  EndProcedure")
+  Add(Lines(), "")
+EndProcedure
+
+Procedure.s BuiltinHeader(cls.s, apiPath.s, outDir.s, kind.s)
+  Protected h.s = ""
+  h + "; " + LSet("", #OUT_EQUALS, "=") + Chr(10)
+  h + "; " + cls + ".pbi - GENERATED FILE. Do not edit by hand." + Chr(10)
+  h + ";" + Chr(10)
+  h + ";   tools/pb_gdext_wizard --outdir " + outDir + Chr(10)
+  h + ";" + Chr(10)
+  h + "; Source: " + BaseName(apiPath) + ". Every hash below is Godot's own." + Chr(10)
+  h + "; " + kind + Chr(10)
+  h + "; Nothing has to be registered: Godot hands these out by type plus hash and" + Chr(10)
+  h + "; they exist at every initialization level, so there is no Register_*_Binds()" + Chr(10)
+  h + "; and no level to wait for. Each wrapper resolves its own pointer on first use." + Chr(10)
+  h + "; " + LSet("", #OUT_EQUALS, "=") + Chr(10)
+  h + Chr(10)
+  ProcedureReturn h
+EndProcedure
+
+Procedure.l EmitBuiltinFile(outDir.s, apiPath.s, cls.s, vtype.l)
+  Protected list = gBuiltins
+  Protected n = JSONArraySize(list)
+  Protected mi.MethodInfo
+  Protected i, j
+
+  NewList mis.MethodInfo()
+  For i = 0 To n - 1
+    Protected c = GetJSONElement(list, i)
+    If JGStr(c, "name") <> cls
+      Continue
+    EndIf
+    Protected methods = JGArr(c, "methods")
+    If Not methods
+      Break
+    EndIf
+    Protected mc = JSONArraySize(methods)
+    For j = 0 To mc - 1
+      ReadMethod(GetJSONElement(methods, j), @mi, 1)
+      If mi\wrappable
+        AddElement(mis())
+        mis() = mi
+      EndIf
+    Next
+    Break
+  Next
+
+  NewList lines.s()
+  Protected hdr.s = BuiltinHeader(cls, apiPath, outDir, "; Methods of the builtin type " + cls + ".")
+  Protected k
+  For k = 1 To CountString(hdr, Chr(10))
+    Add(lines(), StringField(hdr, k, Chr(10)))
+  Next
+
+  Protected prefix.s = Ident(cls)
+  Add(lines(), "DeclareModule " + prefix)
+  Add(lines(), "  EnableExplicit")
+  Add(lines(), "  Prototype LocalBuiltinMethod(*base, *args, *ret, argc.l)")
+  Add(lines(), "  Prototype LocalResolveFn(vtype.l, method_name.s, hash.q)")
+  Add(lines(), "  Prototype LocalFailFn(class_name.s, method_name.s)")
+  Add(lines(), "  Global resolve_fn.i")
+  Add(lines(), "  Global fail_fn.i")
+  ForEach mis()
+    Add(lines(), "  Global gdb_" + Ident(mis()\name) + ".i")
+  Next
+  ForEach mis()
+    Add(lines(), "  Declare" + WrapperRet(mis()) + " " + BuiltinWrapperName(Ident(mis()\name)) + "(" + BuiltinParams(mis()) + ")")
+  Next
+  Add(lines(), "EndDeclareModule")
+  Add(lines(), "")
+  Add(lines(), "Module " + prefix)
+  Add(lines(), "  EnableExplicit")
+  Add(lines(), "")
+  ForEach mis()
+    EmitBuiltinWrapper(lines(), cls, vtype, mis())
+  Next
+  Add(lines(), "EndModule")
+  Add(lines(), "")
+  Add(lines(), "; Injected at TOP LEVEL, so a wrapper can still report a failure even")
+  Add(lines(), "; though nothing in this file is called by the framework.")
+  Add(lines(), prefix + "::resolve_fn = @GDEX_BuiltinMethodBind()")
+  Add(lines(), prefix + "::fail_fn = @GDEX_ReportUnresolved()")
+  Add(lines(), "")
+  ProcedureReturn WriteIfChanged(outDir + "/" + cls + ".pbi", JoinLines(lines()))
+EndProcedure
+
+Procedure.l EmitUtilityFile(outDir.s, apiPath.s)
+  Protected list = gUtility
+  Protected n = JSONArraySize(list)
+  Protected mi.MethodInfo
+  Protected i
+
+  NewList mis.MethodInfo()
+  For i = 0 To n - 1
+    ReadMethod(GetJSONElement(list, i), @mi, 1)
+    If mi\wrappable
+      AddElement(mis())
+      mis() = mi
+    EndIf
+  Next
+
+  NewList lines.s()
+  Protected hdr.s = BuiltinHeader("GlobalScope", apiPath, outDir, "; The @GlobalScope functions.")
+  Protected k
+  For k = 1 To CountString(hdr, Chr(10))
+    Add(lines(), StringField(hdr, k, Chr(10)))
+  Next
+
+  Add(lines(), "DeclareModule GlobalScope")
+  Add(lines(), "  EnableExplicit")
+  Add(lines(), "  Prototype LocalUtilityFn(*ret, *args, argc.l)")
+  Add(lines(), "  Prototype LocalResolveFn(function_name.s, hash.q)")
+  Add(lines(), "  Prototype LocalFailFn(class_name.s, method_name.s)")
+  Add(lines(), "  Global resolve_fn.i")
+  Add(lines(), "  Global fail_fn.i")
+  ForEach mis()
+    Add(lines(), "  Global gdb_" + Ident(mis()\name) + ".i")
+  Next
+  ForEach mis()
+    Protected pp.s = ""
+    Protected q
+    For q = 0 To mis()\argCount - 1
+      If pp <> ""
+        pp + ", "
+      EndIf
+      If IsStructPb(mis()\argPb[q])
+        pp + "*p_" + mis()\argName[q]
+      Else
+        pp + "p_" + mis()\argName[q] + "." + mis()\argPb[q]
+      EndIf
+    Next
+    If IsStructPb(mis()\retPb)
+      If pp <> ""
+        pp + ", "
+      EndIf
+      pp + "*out"
+    EndIf
+    Add(lines(), "  Declare" + WrapperRet(mis()) + " " + BuiltinWrapperName(Ident(mis()\name)) + "(" + pp + ")")
+  Next
+  Add(lines(), "EndDeclareModule")
+  Add(lines(), "")
+  Add(lines(), "Module GlobalScope")
+  Add(lines(), "  EnableExplicit")
+  Add(lines(), "")
+  ForEach mis()
+    EmitUtilityWrapper(lines(), "GlobalScope", mis())
+  Next
+  Add(lines(), "EndModule")
+  Add(lines(), "")
+  Add(lines(), "; Injected at TOP LEVEL, as above.")
+  Add(lines(), "GlobalScope::resolve_fn = @GDEX_UtilityFunctionBind()")
+  Add(lines(), "GlobalScope::fail_fn = @GDEX_ReportUnresolved()")
+  Add(lines(), "")
+  ProcedureReturn WriteIfChanged(outDir + "/GlobalScope.pbi", JoinLines(lines()))
+EndProcedure
+
 Procedure GenerateDir(apiPath.s, List requested.s(), outDir.s)
   LoadApi(apiPath)
 
@@ -905,7 +1333,7 @@ Procedure GenerateDir(apiPath.s, List requested.s(), outDir.s)
     Add(lines(), "; " + LSet("", #OUT_EQUALS, "="))
     Add(lines(), "; " + cls + ".pbi - GENERATED FILE. Do not edit by hand.")
     Add(lines(), ";")
-    Add(lines(), ";   tools/gen_binds --outdir " + outDir)
+    Add(lines(), ";   tools/pb_gdext_wizard --outdir " + outDir)
     Add(lines(), ";")
     Add(lines(), "; Source: " + BaseName(apiPath) + ". Every hash below is Godot's own.")
     Add(lines(), "; Included before gdex_class.pbi so the framework can see the bind")
@@ -924,8 +1352,39 @@ Procedure GenerateDir(apiPath.s, List requested.s(), outDir.s)
       unchanged + 1
     EndIf
   Next
+  ; The builtin types and @GlobalScope, which are not ClassDB classes and need
+  ; no registration. Emitted alongside the classes because they are part of the
+  ; same generated library; generation stays additive either way.
+  Protected bl.l = 0, bu.l = 0
+  Protected bi
+  For bi = 0 To JSONArraySize(gBuiltins) - 1
+    Protected bc = GetJSONElement(gBuiltins, bi)
+    Protected bname.s = JGStr(bc, "name")
+    If bname = "" Or Not JGArr(bc, "methods")
+      Continue
+    EndIf
+    Protected bvt.l = BuiltinVariantType(bname)
+    If bvt < 0
+      Continue
+    EndIf
+    Protected bf.l = EmitBuiltinFile(outDir, apiPath, bname, bvt)
+    If bf
+      written + 1
+      bl + 1
+    Else
+      unchanged + 1
+    EndIf
+  Next
+  If EmitUtilityFile(outDir, apiPath)
+    written + 1
+    bu + 1
+  Else
+    unchanged + 1
+  EndIf
+
   Protected msg.s = outDir + ": " + Str(ListSize(order())) + " class(es), "
   msg + Str(written) + " written, " + Str(unchanged) + " unchanged"
+  msg + "; " + Str(bl) + " builtin type(s), " + Str(bu) + " GlobalScope file(s) refreshed"
   PrintN(msg)
 EndProcedure
 
