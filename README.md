@@ -135,10 +135,6 @@ creates. There is no pre-generated engine code here at all.
 | `generated/helpers/` | the hand-written surface: `ClassDB::bind_method`, `ADD_PROPERTY`, `ADD_SIGNAL`, `emit_signal`, `D_METHOD`, `GDEX_EXTENSION` |
 | `skeleton/` | the entry file, one example class, `build.sh`, and the Godot project |
 
-The wizard copies the framework from the checkout it lives in
-(`GetPathPart(ProgramFilename()) + "../"`), so there is exactly one copy of it
-and nothing can drift.
-
 ## Notes
 
 **The bindings follow your Godot, not this repo.** `--dump-extension-api` asks
