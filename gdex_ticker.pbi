@@ -52,7 +52,7 @@ Procedure GDTicker_bump(*self.GDTicker)
   *self\marks() = Round(*self\counter, #PB_Round_Nearest)
 EndProcedure
 
-Procedure.d GDTicker_get_mark_count(*self.GDTicker)
+Procedure.i GDTicker_get_mark_count(*self.GDTicker)
   ProcedureReturn ListSize(*self\marks())
 EndProcedure
 
