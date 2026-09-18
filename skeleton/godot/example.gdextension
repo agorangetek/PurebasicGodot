@@ -8,3 +8,7 @@ reloadable = false
 
 macos.debug = "res://libexample.dylib"
 macos.release = "res://libexample.dylib"
+windows.debug = "res://libexample.dll"
+windows.release = "res://libexample.dll"
+linux.debug = "res://libexample.so"
+linux.release = "res://libexample.so"

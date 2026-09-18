@@ -141,8 +141,17 @@ creates. There is no pre-generated engine code here at all.
 the binary you passed, so a 4.8 Godot yields 4.8 bindings. That is the point:
 what you compile against is what you load.
 
-**Platform support.** The tool itself is plain PureBasic and should build
-anywhere, but the generated `godot/<name>.gdextension` currently has only
-`macos.*` library entries, and `skeleton/build.sh` ad-hoc signs the dylib with
-`codesign`. For Windows or Linux, add `windows.*` / `linux.*` entries pointing at
-`res://lib<name>.dll` / `.so` and drop the signing step.
+**Platform support.** The generated `godot/<name>.gdextension` carries library
+entries for all three desktop platforms:
+
+```
+macos     res://lib<name>.dylib
+windows   res://lib<name>.dll
+linux     res://lib<name>.so
+```
+
+`skeleton/build.sh` is macOS-only: it emits a `.dylib` and ad-hoc signs it with
+`codesign`, which macOS requires. On Windows or Linux, compile the entry file
+from the PureBasic IDE - or adapt the script - to produce the matching `.dll` or
+`.so` and drop it next to the `.gdextension`. The registry entries are already
+there, so nothing needs editing on the Godot side.
