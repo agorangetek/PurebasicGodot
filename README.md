@@ -238,10 +238,9 @@ unsigned.
 | `gdexample.pb` | The recovered file, **verbatim**. The entry point and the GDExample class. |
 | `gdex_defs.pbi` | Constants, the framework structures, and shared globals. |
 | `gdex_api.pbi` | `load_api`, the resolved function pointers, StringName/Variant helpers. |
-| `gdextension_interface.h` | Godot's own header, vendored. The source of the declarations below; not compiled into the extension. |
-| `gdextension_interface.pbi` | **GENERATED** from the header by `tools/gen_interface.py` — 20 structures and 273 prototypes. Not hand-written. |
-| `tools/gen_interface.py` | Generates the above. `--check` fails if it is out of date. |
-| `tools/check-interface.sh` | Compares the two independently, so a wrong type mapping cannot hide. `iface_sizes.pb` / `iface_sizes.c` are its halves. |
+| `gdextension_interface.pbi` | The hand transcription of Godot's `GDExtensionInterface`. Complete, and checked against the header below by `tools/check-interface.sh`. |
+| `gdextension_interface.h` | Godot's own header, vendored. Not compiled into the extension — it is the authority the transcription is checked against. |
+| `tools/check-interface.sh` | Compares the two. `iface_sizes.pb` / `iface_sizes.c` are its halves. |
 | `gdex_class.pbi` | The framework: `RegisterGDClass`, every generic callback, the macros. |
 | `tools/pb_gdext_wizard.pb` | The generator, in PureBasic. `--outdir`, `--out`, `--check`, `--stats`. |
 | `generate-bindings.sh` | The one-time step. Writes `generated/` from the API dump. |
@@ -865,31 +864,25 @@ with no crash at all, the fourth is a crash at free time from mixing two
 allocation idioms, and the fifth is a lookup that returns null at the wrong
 initialization level.
 
-### 0. The interface declarations are generated, not transcribed
+### 0. The interface transcription is checked, and now complete
 
-`gdextension_interface.pbi` used to be a hand reconstruction of Godot's header,
-and a transcription is only as good as the day it was made: a structure that
-gains, loses or reorders a field still compiles, and every field after the change
-is read from the wrong offset. It is now **generated** from the vendored header
-by `tools/gen_interface.py`, so it cannot drift — and the generator immediately
-found what the transcription had missed: `GDExtensionClassCreationInfo6` had to
-be hand-added to `gdex_api.pbi`, along with two `PrototypeC` declarations, purely
-because the transcription lacked them. All three are gone; the header supplies
-them.
-
-The declarations still have to exist, which is why this is a generator and not
-simply an `#include`. PureBasic mangles its own structures to
-`s_<lowercased-name>` with `f_<field>` members and generates field access against
-that, so it needs its own `Structure` and `Prototype` declarations either way —
-and `pbcompiler` compiles the generated C from a temporary directory, so a
-relative `#include` does not resolve in the first place.
-
-`tools/check-interface.sh` stays as an independent guard on the generator's type
-mapping: it prints `sizeof` from C and `SizeOf` from PureBasic and diffs them:
+`gdextension_interface.pbi` is a hand reconstruction of Godot's header, and a
+transcription is only as good as the day it was made: a structure that gains,
+loses or reorders a field still compiles, and every field after the change is read
+from the wrong offset. Godot's real header is vendored beside it and
+`tools/check-interface.sh` compares the two — it prints `sizeof` from C and
+`SizeOf` from PureBasic and diffs them:
 
 ```
 interface: all 19 structures match Godot's header
 ```
+
+That check is also what showed the transcription had been **incomplete**:
+`GDExtensionClassCreationInfo6`, `GDExtensionInterfaceClassdbConstructObject3`
+and `GDExtensionInterfaceClassdbRegisterExtensionClass6` were absent from it and
+lived in a compensating patch at the top of `gdex_api.pbi`, under a heading that
+admitted as much. They now sit in the transcription with the rest of their kind,
+and `gdex_api.pbi` no longer patches anything.
 
 It is not a full structural check, but it catches the failure that matters, and
 it was checked in the negative direction by removing one `Align
@@ -905,12 +898,11 @@ Note what that shows: the two structures that *embed* `PropertyInfo` drifted
 with it, which is exactly how one missing alignment reaches everything
 downstream.
 
-**One caveat the generator inherits deliberately.** Prototypes carry no return
-suffix, because PureBasic's default return is an 8-byte Integer — exactly right
-for the pointer and `GDExtensionInt` returns that dominate the interface, and
-what the hand transcription did for all 265. Narrowing the small scalar returns
-is a separate change that wants per-function validation, not a generator's
-guess.
+**Prototypes carry no return suffix**, which is deliberate rather than an
+oversight: PureBasic's default return is an 8-byte Integer, which is exactly right
+for the pointer and `GDExtensionInt` returns that dominate the interface. It is
+what the transcription does for all of them, and narrowing the small scalar
+returns wants per-function validation rather than a sweep.
 
 ### 1. PureBasic packs structures; C pads them
 
