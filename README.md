@@ -9,6 +9,41 @@ Nothing engine-specific is stored here. The bindings are generated from the Godo
 binary *you* name, so the project is always bound to the exact engine it will run
 against.
 
+> ### Work in progress
+>
+> This is early, and the surface still moves — expect the framework API and the
+> generated project layout to change between commits. It has been exercised end
+> to end on **macOS arm64 only**; the Windows and Linux entries in the
+> `.gdextension` are there for completeness, but nothing has been built or run on
+> them yet.
+
+## Status
+
+Verified by generating a project with the wizard, compiling it and running it in
+Godot:
+
+* classes with properties, methods and signals, declared in the godot-cpp shape —
+  `ClassDB::bind_method`, `ADD_PROPERTY`, `ADD_SIGNAL`, `emit_signal`;
+* calling engine methods through the generated per-class modules, as in
+  `Node2D::set_position`;
+* registration driven by one class list: the framework works out each class's
+  initialization level from its parent.
+
+Not there yet:
+
+* **One argument per method.** The dispatcher has a shape per call signature, so
+  a second argument is reported rather than registered.
+* **Pointer-typed values** — `String`, `StringName`, `Object`, `Array`,
+  `Dictionary` — are rejected by `bind_method`, `ADD_PROPERTY` and `ADD_SIGNAL`.
+  Only value types cross the boundary.
+* **Builtin and utility methods.** A `Vector2` crosses as data, but
+  `Vector2.length()` and `@GlobalScope` functions cannot be called.
+* **One virtual.** `_process` is wired; no other engine virtual is.
+* **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`, and
+  forgetting one fails silently at runtime rather than at compile time.
+* **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
+  properties.
+
 ## Requirements
 
 | | |
