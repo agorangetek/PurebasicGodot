@@ -29,20 +29,20 @@ Godot:
 * registration driven by one class list: the framework works out each class's
   initialization level from its parent.
 
-Not there yet:
+## Todo
 
-* **One argument per method.** The dispatcher has a shape per call signature, so
-  a second argument is reported rather than registered.
-* **Pointer-typed values** — `String`, `StringName`, `Object`, `Array`,
-  `Dictionary` — are rejected by `bind_method`, `ADD_PROPERTY` and `ADD_SIGNAL`.
-  Only value types cross the boundary.
-* **Builtin and utility methods.** A `Vector2` crosses as data, but
-  `Vector2.length()` and `@GlobalScope` functions cannot be called.
-* **One virtual.** `_process` is wired; no other engine virtual is.
-* **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`, and
-  forgetting one fails silently at runtime rather than at compile time.
-* **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
-  properties.
+- [ ] **One argument per method.** The dispatcher has a shape per call
+      signature, so a second argument is reported rather than registered.
+- [ ] **Pointer-typed values** — `String`, `StringName`, `Object`, `Array`,
+      `Dictionary` — are rejected by `bind_method`, `ADD_PROPERTY` and
+      `ADD_SIGNAL`. Only value types cross the boundary.
+- [ ] **Builtin and utility methods.** A `Vector2` crosses as data, but
+      `Vector2.length()` and `@GlobalScope` functions cannot be called.
+- [ ] **One virtual.** `_process` is wired; no other engine virtual is.
+- [ ] **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`,
+      and forgetting one fails silently at runtime rather than at compile time.
+- [ ] **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
+      properties.
 
 ## Requirements
 
