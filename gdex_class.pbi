@@ -119,6 +119,16 @@ Global gdex_engine_register_bind.i = 0
 Global gdex_engine_unregister_bind.i = 0
 Global gdex_engine_binds_done.l = #False
 
+; The pending error a vararg handler can raise. Declared HERE, above every
+; procedure that touches them, and that placement is load-bearing: PureBasic
+; invents a procedure-local for a name it has not seen a Global for yet, so
+; with these declared further down GDEX_MethodCall silently got its own copy,
+; the dispatcher read 0 forever, and the handler's write went nowhere. Measured,
+; not theorised - the handler printed 4 and the dispatcher 0 in the same call.
+Global gdex_vararg_err.l = #GDEXTENSION_CALL_OK
+Global gdex_vararg_arg.l = 0
+Global gdex_vararg_expect.l = 0
+
 ; Node.set_process / set_physics_process / get_process_delta_time. Used only by
 ; the notification-based _process path and by GDEX_EnablePhysics, which run at
 ; runtime, never at CORE.
@@ -956,10 +966,6 @@ EndProcedure
 ; GDEX_VarargFail; the dispatcher writes the result into Godot's r_error after
 ; the call returns.
 ; ===========================================================================
-
-Global gdex_vararg_err.l = #GDEXTENSION_CALL_OK
-Global gdex_vararg_arg.l = 0
-Global gdex_vararg_expect.l = 0
 
 Procedure GDEX_VarargFail(code.l, argument.l = 0, expected.l = 0)
   gdex_vararg_err = code

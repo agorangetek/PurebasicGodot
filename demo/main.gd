@@ -135,8 +135,11 @@ func _ready() -> void:
 	print("  sum(1, 2, 3)             = ", b.sum(1, 2, 3))
 	print("  sum(1.5, 2.5, 3.0, 4.0)  = ", b.sum(1.5, 2.5, 3.0, 4.0))
 	print("  span_of(2.0, 5.5)        = ", b.span_of(2.0, 5.5))
-	var bad = b.span_of(2.0)          # r_error: TOO_FEW_ARGUMENTS
-	print("  span_of(2.0)             = ", bad, "   (rejected through r_error; Godot logged it)")
+	# Called through callv on purpose: a direct b.span_of(2.0) is rejected by
+	# Godot too, and a SCRIPT ERROR aborts _ready, so the rest of the demo would
+	# never run. This way the rejection is still reached and still logged.
+	var bad = b.callv("span_of", [2.0])
+	print("  span_of(2.0) via callv   = ", bad, "   (handler rejected it through r_error)")
 
 	print("--- builtin methods and @GlobalScope ---")
 	print("  Vector2(3,4).length()            = ", b.probe_length(Vector2(3.0, 4.0)))
