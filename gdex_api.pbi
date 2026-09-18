@@ -12,43 +12,6 @@
 IncludeFile "gdextension_interface.pbi"
 
 ; ---------------------------------------------------------------------------
-; DECLARATIONS THE RECOVERED TRANSCRIPTION WAS MISSING
-;
-; GDExtensionClassCreationInfo6 is what `classdb_register_extension_class6`
-; takes on Godot 4.5+. It is field-for-field GDExtensionClassCreationInfo4
-; (declared above) but with the newer callback typedefs, which are ABI
-; identical - so the layout is the same 22 fields.
-; ---------------------------------------------------------------------------
-Structure GDExtensionClassCreationInfo6 Align #PB_Structure_AlignC
-  is_virtual.b
-  is_abstract.b
-  is_exposed.b
-  is_runtime.b
-  *icon_path
-  *set_func
-  *get_func
-  *get_property_list_func
-  *free_property_list_func
-  *property_can_revert_func
-  *property_get_revert_func
-  *validate_property_func
-  *notification_func
-  *to_string_func
-  *reference_func
-  *unreference_func
-  *create_instance_func
-  *free_instance_func
-  *recreate_instance_func
-  *get_virtual_func
-  *get_virtual_call_data_func
-  *call_virtual_with_data_func
-  *class_userdata
-EndStructure
-
-PrototypeC.i GDExtensionInterfaceClassdbConstructObject3(classname)
-PrototypeC GDExtensionInterfaceClassdbRegisterExtensionClass6(library, class_name, parent_class_name, extension_funcs)
-
-; ---------------------------------------------------------------------------
 ; RESOLVED FUNCTION POINTERS
 ;
 ; A Prototype in PureBasic is a type; a call only happens through a variable
