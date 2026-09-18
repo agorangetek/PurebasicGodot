@@ -48,4 +48,4 @@ GDEX_EXTENSION(example_library_init)
 
 ; IDE Options = PureBasic 6.41 - C Backend (MacOS X - arm64)
 ; ExecutableFormat = Shared .dylib
-; Executable = libexample.dylib
+; Executable = godot/libexample.dylib

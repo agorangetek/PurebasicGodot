@@ -1186,7 +1186,7 @@ Procedure CopyTree(src.s, dst.s)
 EndProcedure
 
 ; Rewrite a file's text in place, for putting the project name into the entry
-; file, build.sh and the .gdextension.
+; file and the .gdextension.
 Procedure ReplaceInFile(path.s, fromText.s, toText.s)
   Protected f = ReadFile(#PB_Any, path)
   If Not f
@@ -1291,13 +1291,11 @@ Procedure Wizard(godotExe.s, projectName.s)
   ; Copied to the project root those must lose the prefix.
   CopyFile(repo + "skeleton/example.pb", root + "/example.pb")
   CopyFile(repo + "skeleton/spinner.pbi", root + "/spinner.pbi")
-  CopyFile(repo + "skeleton/build.sh", root + "/build.sh")
   CopyFile(repo + "skeleton/godot/project.godot", root + "/godot/project.godot")
   CopyFile(repo + "skeleton/godot/main.tscn", root + "/godot/main.tscn")
   CopyFile(repo + "skeleton/godot/main.gd", root + "/godot/main.gd")
   CopyFile(repo + "skeleton/godot/example.gdextension", root + "/godot/example.gdextension")
   ReplaceInFile(root + "/example.pb", "../", "")
-  ReplaceInFile(root + "/build.sh", "../", "")
   PrintN("  framework copied")
 
   ; 4. The project's own name, in the places it has to appear.
@@ -1306,8 +1304,6 @@ Procedure Wizard(godotExe.s, projectName.s)
   RenameFile(root + "/example.pb", pb)
   ReplaceInFile(pb, "example_library_init", projectName + "_library_init")
   ReplaceInFile(pb, "libexample.dylib", "lib" + projectName + ".dylib")
-  ReplaceInFile(root + "/build.sh", "example.pb", projectName + ".pb")
-  ReplaceInFile(root + "/build.sh", "libexample", "lib" + projectName)
   RenameFile(root + "/godot/example.gdextension", root + "/godot/" + projectName + ".gdextension")
   ReplaceInFile(root + "/godot/" + projectName + ".gdextension", "example_library_init", projectName + "_library_init")
   ReplaceInFile(root + "/godot/" + projectName + ".gdextension", "libexample", "lib" + projectName)
@@ -1321,7 +1317,7 @@ Procedure Wizard(godotExe.s, projectName.s)
   PrintN("  godot/           the Godot project, .gdextension already wired")
   PrintN("")
   PrintN("next:")
-  PrintN("  1. ./build.sh --install        (or compile " + projectName + ".pb in the IDE)")
+  PrintN("  1. open " + projectName + ".pb in the PureBasic IDE and compile it")
   PrintN("  2. cd godot && Godot --headless --path . --import")
   PrintN("  3. cd godot && Godot --path .")
   ProcedureReturn 0

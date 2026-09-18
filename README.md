@@ -19,8 +19,7 @@ against.
 
 `pbcompiler` is expected at
 `/Applications/PureBasic.app/Contents/Resources/compilers/pbcompiler`.
-Set `PBCOMPILER` to override it (the generated `build.sh` honours the same
-variable).
+Set `PBCOMPILER` to override it if yours is elsewhere.
 
 ## Build the wizard
 
@@ -50,7 +49,6 @@ picker — for scripting, or when there is no GUI:
 mygame/
   mygame.pb            the entry file: open this in the PureBasic IDE
   spinner.pbi          one example class, to copy and rename
-  build.sh             compiles mygame.pb and installs the dylib
   gdex_*.pbi           the framework
   gdextension_interface.pbi
   generated/
@@ -64,13 +62,22 @@ mygame/
     main.tscn, main.gd
 ```
 
-## Build and run
+## Build
+
+**Open `<name>.pb` in the PureBasic IDE and compile it.** There is no build
+script: the entry file carries its own IDE settings, and they are already right —
+*Executable format: Shared .dylib* (`.dll` / `.so` on Windows and Linux) and
+*Executable: `godot/lib<name>.dylib`*, so a plain compile drops the library
+exactly where the `.gdextension` looks for it.
+
+Worth a glance the first time: **Compiler > Compiler Options > Executable**
+should point into `godot/`. If it does not, compile and move the result there.
+
+## Run
 
 ```sh
-cd mygame
-./build.sh --install                                   # compile + install the dylib
 cd godot
-Godot --headless --path . --import                     # once, so GDScript sees the class
+Godot --headless --path . --import     # once, so GDScript sees the class
 Godot --path .
 ```
 
@@ -133,7 +140,7 @@ creates. There is no pre-generated engine code here at all.
 | `gdex_defs.pbi`, `gdex_types.pbi`, `gdextension_interface.pbi` | framework constants, structures, the interface transcription |
 | `gdex_api.pbi`, `gdex_class.pbi` | interface resolution, registration, the generic callbacks |
 | `generated/helpers/` | the hand-written surface: `ClassDB::bind_method`, `ADD_PROPERTY`, `ADD_SIGNAL`, `emit_signal`, `D_METHOD`, `GDEX_EXTENSION` |
-| `skeleton/` | the entry file, one example class, `build.sh`, and the Godot project |
+| `skeleton/` | the entry file, one example class, and the Godot project |
 
 ## Notes
 
@@ -150,8 +157,6 @@ windows   res://lib<name>.dll
 linux     res://lib<name>.so
 ```
 
-`skeleton/build.sh` is macOS-only: it emits a `.dylib` and ad-hoc signs it with
-`codesign`, which macOS requires. On Windows or Linux, compile the entry file
-from the PureBasic IDE - or adapt the script - to produce the matching `.dll` or
-`.so` and drop it next to the `.gdextension`. The registry entries are already
-there, so nothing needs editing on the Godot side.
+Compile the entry file from the PureBasic IDE on whichever platform you are
+targeting, and set the output extension to match. The registry entries are
+already there, so nothing on the Godot side needs editing.
