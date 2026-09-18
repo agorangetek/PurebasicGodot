@@ -349,6 +349,23 @@ Procedure GDBouncer_span_of(*self.GDBouncer, *args, *out, argc.i)
   PokeD(*out, GDEX_ArgDouble(*args, 1) - GDEX_ArgDouble(*args, 0))
 EndProcedure
 
+; (Variant...) -> float. The lenient counterpart to span_of: a short call is
+; complained about and answered with a sentinel, so the CALLER'S function keeps
+; running. Godot has no "soft error" - setting r_error IS the hard-failure
+; channel and GDScript aborts on it - so returning a value and rejecting the
+; call are alternatives, and this is the returning one.
+Procedure GDBouncer_span_lenient(*self.GDBouncer, *args, *out, argc.i)
+  If argc < 2
+    Protected wmsg.s = "[gdex] span_lenient: expected 2 arguments, got "
+    wmsg + Str(argc)
+    wmsg + "; answering -1 instead"
+    GDEX_Warn(wmsg)
+    PokeD(*out, -1.0)
+    ProcedureReturn
+  EndIf
+  PokeD(*out, GDEX_ArgDouble(*args, 1) - GDEX_ArgDouble(*args, 0))
+EndProcedure
+
 Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("get_amplitude"), @GDBouncer_get_amplitude(), #FLOAT)
   ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDBouncer_set_amplitude(), #VOID, #FLOAT)
@@ -400,6 +417,7 @@ Procedure GDBouncer_bind()
   ; Variant array and a count, which is the only shape that can receive it.
   ClassDB::bind_vararg(D_METHOD("sum"), @GDBouncer_sum(), #FLOAT)
   ClassDB::bind_vararg(D_METHOD("span_of"), @GDBouncer_span_of(), #FLOAT)
+  ClassDB::bind_vararg(D_METHOD("span_lenient"), @GDBouncer_span_lenient(), #FLOAT)
 
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")

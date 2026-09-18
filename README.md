@@ -708,6 +708,60 @@ wrapper cannot see silently becomes a module-local. The wrapper then compiles
 cleanly and does nothing at all. It caught exactly that class of bug while this
 was being built.
 
+### Variadic methods
+
+Godot marshals every argument of a variadic method into a Variant array and
+passes the count, so a vararg method is an ordinary PureBasic procedure that
+loops. Nothing variadic has to exist on this side of the boundary - which is why
+this needs no inline C and no assembly:
+
+```purebasic
+ClassDB::bind_vararg(D_METHOD("sum"), @GDExample_sum(), #FLOAT)
+
+Procedure GDExample_sum(*self.GDExample, *args, *out, argc.i)
+  Protected k, total.d
+  For k = 0 To argc - 1 : total + GDEX_ArgDouble(*args, k) : Next k
+  PokeD(*out, total)
+EndProcedure
+```
+
+`bind_vararg` sets `#GDEXTENSION_METHOD_FLAG_VARARG`, which is what makes Godot
+route the call through `call_func` with a Variant array and a count instead of
+building a typed ptrcall this shape could not receive.
+
+**A bad call has two possible answers and they are different channels.**
+
+`GDEX_VarargFail(code, argument, expected)` sets Godot's `r_error`, and that is
+the **hard-failure** channel: GDScript aborts the calling function, exactly as it
+does for an engine method that rejects a call. Godot renders the error itself
+from the fields the handler supplied:
+
+```
+ERROR: Error calling method from 'callv': 'GDBouncer::span_of':
+       Method expected 2 argument(s), but called with 1.
+```
+
+The alternative is to answer with a sentinel and return normally, so the caller
+keeps running and receives the value:
+
+```purebasic
+If argc < 2
+  GDEX_Warn("[gdex] span_lenient: expected " + Str(2) + ", got " + Str(argc) + "; answering -1")
+  PokeD(*out, -1.0)
+  ProcedureReturn
+EndIf
+```
+
+`GDEX_Warn` reports through Godot's WARNING channel rather than its error one, so
+a condition that continued does not read like a crash - which matters, because a
+reader who catches that stops trusting the error log.
+
+There is no third option. Godot has no "soft error": setting `r_error` *is* the
+hard-failure channel, so rejecting the call and returning a value are mutually
+exclusive and the handler must choose. A vararg method whose caller cannot
+survive an abort should return a sentinel; one whose caller must not proceed on
+bad input should reject.
+
 ### Engine virtuals and notifications
 
 Godot delivers almost every engine virtual as a **notification** — `_ready`,

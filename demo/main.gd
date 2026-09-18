@@ -141,6 +141,11 @@ func _ready() -> void:
 	var bad = b.callv("span_of", [2.0])
 	print("  span_of(2.0) via callv   = ", bad, "   (handler rejected it through r_error)")
 
+	# The other channel: complained about, answered with a sentinel, and this
+	# function keeps going - a direct call, no callv needed.
+	var lenient: float = b.span_lenient(2.0)
+	print("  span_lenient(2.0)        = ", lenient, "   (warned, caller survived)")
+
 	print("--- builtin methods and @GlobalScope ---")
 	print("  Vector2(3,4).length()            = ", b.probe_length(Vector2(3.0, 4.0)))
 	print("  @GlobalScope.deg_to_rad(180.0)   = ", b.probe_deg_to_rad(180.0))

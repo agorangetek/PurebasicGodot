@@ -102,6 +102,20 @@ Procedure GDEX_Fail(msg.s)
   GDEX_Report(msg)
 EndProcedure
 
+; The same thing said through Godot's WARNING channel, for a condition worth
+; stating out loud that is not fatal - a vararg handler answering a bad call
+; with a sentinel instead of rejecting it, for instance. Reporting something
+; that then continued as an ERROR misrepresents it, and a reader who notices
+; stops trusting the error log; that is the whole reason this exists separately
+; from GDEX_Fail.
+Procedure GDEX_Warn(msg.s)
+  If g_print_warning
+    Protected fn.s = "gdex"
+    Protected fl.s = "gdex.pb"
+    g_print_warning(UTF8(msg), UTF8(fn), UTF8(fl), 0, #False)
+  EndIf
+EndProcedure
+
 Procedure GDEX_Trace(msg.s)
   If gdex_trace And g_print_error
     Protected fn.s = "gdex"
