@@ -1,0 +1,15 @@
+# Build output
+purebasic.c
+tools/pb_gdext_wizard
+*.dylib
+*.so
+*.dll
+*.exe
+*.o
+
+# Generated bindings: the wizard produces these per project, one per engine
+# class. Only the hand-written helpers are source.
+generated/*.pbi
+!generated/helpers/
+
+.DS_Store
