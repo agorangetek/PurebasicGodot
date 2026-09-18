@@ -145,16 +145,6 @@ and nothing can drift.
 the binary you passed, so a 4.8 Godot yields 4.8 bindings. That is the point:
 what you compile against is what you load.
 
-**`api/extension_api.json` is worth keeping.** It is what `generated/` was
-produced from, and re-running the wizard is how you regenerate after a Godot
-upgrade.
-
-**A measured PureBasic caveat.** `ProgramRunning()` and `CloseProgram()`
-segfault on the Godot child process on macOS (exit 139), with the dump written
-correctly anyway. The wizard therefore never tracks the child: it deletes the
-target file, starts the dump, and waits for that file to appear and stop
-growing. If you wrap Godot yourself, do the same.
-
 **Platform support.** The tool itself is plain PureBasic and should build
 anywhere, but the generated `godot/<name>.gdextension` currently has only
 `macos.*` library entries, and `skeleton/build.sh` ad-hoc signs the dylib with
