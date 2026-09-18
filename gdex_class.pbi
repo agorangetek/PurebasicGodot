@@ -49,6 +49,29 @@ Prototype GDEXIntSetter(*self, v.l)
 Prototype GDEXBuiltinOut(*self, *out)
 Prototype GDEXBuiltinIn(*self, *in)
 Prototype GDEXBuiltinInOut(*self, *in, *out)
+; The generic multi-argument form. One prototype serves every arity and every
+; combination of value types, because the callee reads its arguments out of
+; *args instead of naming them in the signature.
+Prototype GDEXArgs(*self, *args, *out)
+
+; One prototype per two-argument scalar signature. The callee names its
+; parameters, exactly as it does in C++.
+Prototype GDEXV2FF(*self, a.d, b.d)
+Prototype GDEXV2FI(*self, a.d, b.l)
+Prototype GDEXV2IF(*self, a.l, b.d)
+Prototype GDEXV2II(*self, a.l, b.l)
+Prototype.d GDEXF2FF(*self, a.d, b.d)
+Prototype.d GDEXF2FI(*self, a.d, b.l)
+Prototype.d GDEXF2IF(*self, a.l, b.d)
+Prototype.d GDEXF2II(*self, a.l, b.l)
+Prototype.i GDEXI2FF(*self, a.d, b.d)
+Prototype.i GDEXI2FI(*self, a.d, b.l)
+Prototype.i GDEXI2IF(*self, a.l, b.d)
+Prototype.i GDEXI2II(*self, a.l, b.l)
+
+; Defined further down with the other table helpers, but the registration
+; procedures above it need it, so it is declared here.
+Declare.l GDEX_VariantTypeSize(vtype.l)
 
 ; ===========================================================================
 ; THE FRAMEWORK'S OWN BINDS
@@ -423,11 +446,29 @@ EndProcedure
 
 ; The Variant type and the metadata for each shape, in one place so the
 ; dispatchers and the registration cannot drift apart.
-Procedure.l GDEX_MethodArgType(*m.GDMethodEntry)
+Procedure.l GDEX_MethodArgType(*m.GDMethodEntry, index.l)
   Select *m\shape
     Case #GDEX_SHAPE_VOID_1F  : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_FLOAT
     Case #GDEX_SHAPE_VOID_1I  : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_INT
-    Case #GDEX_SHAPE_BUILTIN_ARG, #GDEX_SHAPE_BUILTIN_ARG_RET : ProcedureReturn *m\arg_type
+    Case #GDEX_SHAPE_BUILTIN_ARG, #GDEX_SHAPE_BUILTIN_ARG_RET
+      If index = 0
+        ProcedureReturn *m\arg_type[0]
+      EndIf
+    Case #GDEX_SHAPE_ARGS
+      ProcedureReturn *m\arg_type[index]
+    Case #GDEX_SHAPE_2FF_VOID To #GDEX_SHAPE_2II_I
+      ; kind 0 is float, 1 is int; arg0 is the middle bit, arg1 the low one.
+      Protected k2.l = *m\shape - #GDEX_SHAPE_2FF_VOID
+      Protected kind.l
+      If index = 0
+        kind = (k2 >> 1) & 1
+      Else
+        kind = k2 & 1
+      EndIf
+      If kind = 0
+        ProcedureReturn #GDEXTENSION_VARIANT_TYPE_FLOAT
+      EndIf
+      ProcedureReturn #GDEXTENSION_VARIANT_TYPE_INT
   EndSelect
   ProcedureReturn #GDEXTENSION_VARIANT_TYPE_NIL
 EndProcedure
@@ -436,7 +477,14 @@ Procedure.l GDEX_MethodRetType(*m.GDMethodEntry)
   Select *m\shape
     Case #GDEX_SHAPE_F64_0 : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_FLOAT
     Case #GDEX_SHAPE_I64_0 : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_INT
-    Case #GDEX_SHAPE_BUILTIN_RET, #GDEX_SHAPE_BUILTIN_ARG_RET : ProcedureReturn *m\ret_type
+    Case #GDEX_SHAPE_BUILTIN_RET, #GDEX_SHAPE_BUILTIN_ARG_RET, #GDEX_SHAPE_ARGS : ProcedureReturn *m\ret_type
+    Case #GDEX_SHAPE_2FF_VOID To #GDEX_SHAPE_2II_I
+      Protected kr.l = (*m\shape - #GDEX_SHAPE_2FF_VOID) >> 2
+      If kr = 1
+        ProcedureReturn #GDEXTENSION_VARIANT_TYPE_FLOAT
+      ElseIf kr = 2
+        ProcedureReturn #GDEXTENSION_VARIANT_TYPE_INT
+      EndIf
   EndSelect
   ProcedureReturn #GDEXTENSION_VARIANT_TYPE_NIL
 EndProcedure
@@ -449,9 +497,41 @@ Procedure.l GDEX_TypeMeta(vtype.l)
   ProcedureReturn #GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
 EndProcedure
 
-Procedure GDEX_ArgBuiltin(*args, vtype.l, *out)
-  Protected *var = PeekI(*args)
+; The Nth argument, unwrapped into its native form. Godot hands the callee an
+; array of pointers, one per argument, each aimed at a Variant.
+Procedure GDEX_ArgBuiltinAt(*args, index.l, vtype.l, *out)
+  Protected *var = PeekI(*args + index * SizeOf(Integer))
   GDEX_UnwrapVariant(*out, vtype, *var)
+EndProcedure
+
+Procedure GDEX_ArgBuiltin(*args, vtype.l, *out)
+  GDEX_ArgBuiltinAt(*args, 0, vtype, *out)
+EndProcedure
+
+; The Nth argument as an int, for the Variant-based dispatcher.
+Procedure.l GDEX_ArgInt(*args, index.l)
+  Protected *var = PeekI(*args + index * SizeOf(Integer))
+  Protected v.l
+  g_to_int(@v, *var)
+  ProcedureReturn v
+EndProcedure
+
+; Reading the arguments of a generic-shape method.
+;
+; Both dispatchers hand the callee the same thing: a pointer to an array of
+; pointers, one per declared argument, each aimed at that argument's native
+; value. So one set of readers serves the Variant path and the native path
+; alike, and a class that uses them never learns which one ran.
+Procedure.i GDEX_ArgPtr(*args, index.l)
+  ProcedureReturn PeekI(*args + index * SizeOf(Integer))
+EndProcedure
+
+Procedure.d GDEX_ArgD(*args, index.l)
+  ProcedureReturn PeekD(GDEX_ArgPtr(*args, index))
+EndProcedure
+
+Procedure.l GDEX_ArgL(*args, index.l)
+  ProcedureReturn PeekL(GDEX_ArgPtr(*args, index))
 EndProcedure
 
 ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_ret, *r_error)
@@ -493,19 +573,19 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         g_variant_new_nil(*r_ret)
       EndIf
     Case #GDEX_SHAPE_BUILTIN_ARG
-      Protected *ab = AllocateMemory(*m\arg_size)
+      Protected *ab = AllocateMemory(*m\arg_size[0])
       If *ab
-        GDEX_ArgBuiltin(*args, *m\arg_type, *ab)
+        GDEX_ArgBuiltin(*args, *m\arg_type[0], *ab)
         Protected f7.GDEXBuiltinIn = *m\func
         f7(*instance, *ab)
         FreeMemory(*ab)
       EndIf
       g_variant_new_nil(*r_ret)
     Case #GDEX_SHAPE_BUILTIN_ARG_RET
-      Protected *ain = AllocateMemory(*m\arg_size)
+      Protected *ain = AllocateMemory(*m\arg_size[0])
       Protected *aout = AllocateMemory(*m\ret_size)
       If *ain And *aout
-        GDEX_ArgBuiltin(*args, *m\arg_type, *ain)
+        GDEX_ArgBuiltin(*args, *m\arg_type[0], *ain)
         FillMemory(*aout, *m\ret_size, 0)
         Protected f8.GDEXBuiltinInOut = *m\func
         f8(*instance, *ain, *aout)
@@ -518,6 +598,101 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
       EndIf
       If *aout
         FreeMemory(*aout)
+      EndIf
+    Case #GDEX_SHAPE_2FF_VOID
+      Protected mc0.GDEXV2FF = *m\func
+      mc0(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_variant_new_nil(*r_ret)
+    Case #GDEX_SHAPE_2FI_VOID
+      Protected mc1.GDEXV2FI = *m\func
+      mc1(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgInt(*args, 1))
+      g_variant_new_nil(*r_ret)
+    Case #GDEX_SHAPE_2IF_VOID
+      Protected mc2.GDEXV2IF = *m\func
+      mc2(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_variant_new_nil(*r_ret)
+    Case #GDEX_SHAPE_2II_VOID
+      Protected mc3.GDEXV2II = *m\func
+      mc3(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgInt(*args, 1))
+      g_variant_new_nil(*r_ret)
+    Case #GDEX_SHAPE_2FF_F
+      Protected mf4.GDEXF2FF = *m\func
+      Protected wr4.d = mf4(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_from_float(*r_ret, @wr4)
+    Case #GDEX_SHAPE_2FI_F
+      Protected mf5.GDEXF2FI = *m\func
+      Protected wr5.d = mf5(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgInt(*args, 1))
+      g_from_float(*r_ret, @wr5)
+    Case #GDEX_SHAPE_2IF_F
+      Protected mf6.GDEXF2IF = *m\func
+      Protected wr6.d = mf6(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_from_float(*r_ret, @wr6)
+    Case #GDEX_SHAPE_2II_F
+      Protected mf7.GDEXF2II = *m\func
+      Protected wr7.d = mf7(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgInt(*args, 1))
+      g_from_float(*r_ret, @wr7)
+    Case #GDEX_SHAPE_2FF_I
+      Protected mi8.GDEXI2FF = *m\func
+      Protected wi8.i = mi8(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_from_int(*r_ret, @wi8)
+    Case #GDEX_SHAPE_2FI_I
+      Protected mi9.GDEXI2FI = *m\func
+      Protected wi9.i = mi9(*instance, GDEX_ArgDouble(*args, 0), GDEX_ArgInt(*args, 1))
+      g_from_int(*r_ret, @wi9)
+    Case #GDEX_SHAPE_2IF_I
+      Protected mi10.GDEXI2IF = *m\func
+      Protected wi10.i = mi10(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgDouble(*args, 1))
+      g_from_int(*r_ret, @wi10)
+    Case #GDEX_SHAPE_2II_I
+      Protected mi11.GDEXI2II = *m\func
+      Protected wi11.i = mi11(*instance, GDEX_ArgInt(*args, 0), GDEX_ArgInt(*args, 1))
+      g_from_int(*r_ret, @wi11)
+    Case #GDEX_SHAPE_ARGS
+      ; Any arity, any value types. Each argument is unwrapped into a buffer of
+      ; its own and the callee is handed an array of pointers to them, so the
+      ; framework never needs a shape per signature. *out is storage for the
+      ; declared return type, or 0 when there is nothing to return.
+      Protected nargs.l = *m\argc
+      If nargs <= 0
+        g_variant_new_nil(*r_ret)
+      Else
+        Protected Dim ap.i(nargs - 1)
+        Protected Dim ab.i(nargs - 1)
+        Protected ai.l
+        Protected ok.l = #True
+        For ai = 0 To nargs - 1
+          ab(ai) = AllocateMemory(*m\arg_size[ai])
+          If Not ab(ai)
+            ok = #False
+            Break
+          EndIf
+          GDEX_ArgBuiltinAt(*args, ai, *m\arg_type[ai], ab(ai))
+          ap(ai) = ab(ai)
+        Next ai
+        If ok
+          Protected *ob = 0
+          If *m\ret_size > 0
+            *ob = AllocateMemory(*m\ret_size)
+            If *ob
+              FillMemory(*ob, *m\ret_size, 0)
+            EndIf
+          EndIf
+          Protected ga.GDEXArgs = *m\func
+          ga(*instance, @ap(0), *ob)
+          If *ob
+            GDEX_WrapVariant(*r_ret, *m\ret_type, *ob)
+            FreeMemory(*ob)
+          Else
+            g_variant_new_nil(*r_ret)
+          EndIf
+        Else
+          g_variant_new_nil(*r_ret)
+        EndIf
+        For ai = 0 To nargs - 1
+          If ab(ai)
+            FreeMemory(ab(ai))
+          EndIf
+        Next ai
       EndIf
   EndSelect
 EndProcedure
@@ -557,12 +732,114 @@ ProcedureC GDEX_MethodPtrCall(*method_userdata, *instance, *args, *r_ret)
     Case #GDEX_SHAPE_BUILTIN_ARG_RET
       Protected f8.GDEXBuiltinInOut = *m\func
       f8(*instance, PeekI(*args), *r_ret)
+    Case #GDEX_SHAPE_2FF_VOID
+      Protected pc0.GDEXV2FF = *m\func
+      pc0(*instance, GDEX_ArgD(*args, 0), GDEX_ArgD(*args, 1))
+    Case #GDEX_SHAPE_2FI_VOID
+      Protected pc1.GDEXV2FI = *m\func
+      pc1(*instance, GDEX_ArgD(*args, 0), GDEX_ArgL(*args, 1))
+    Case #GDEX_SHAPE_2IF_VOID
+      Protected pc2.GDEXV2IF = *m\func
+      pc2(*instance, GDEX_ArgL(*args, 0), GDEX_ArgD(*args, 1))
+    Case #GDEX_SHAPE_2II_VOID
+      Protected pc3.GDEXV2II = *m\func
+      pc3(*instance, GDEX_ArgL(*args, 0), GDEX_ArgL(*args, 1))
+    Case #GDEX_SHAPE_2FF_F
+      Protected pf4.GDEXF2FF = *m\func
+      Protected pr4.d = pf4(*instance, GDEX_ArgD(*args, 0), GDEX_ArgD(*args, 1))
+      If *r_ret
+        PokeD(*r_ret, pr4)
+      EndIf
+    Case #GDEX_SHAPE_2FI_F
+      Protected pf5.GDEXF2FI = *m\func
+      Protected pr5.d = pf5(*instance, GDEX_ArgD(*args, 0), GDEX_ArgL(*args, 1))
+      If *r_ret
+        PokeD(*r_ret, pr5)
+      EndIf
+    Case #GDEX_SHAPE_2IF_F
+      Protected pf6.GDEXF2IF = *m\func
+      Protected pr6.d = pf6(*instance, GDEX_ArgL(*args, 0), GDEX_ArgD(*args, 1))
+      If *r_ret
+        PokeD(*r_ret, pr6)
+      EndIf
+    Case #GDEX_SHAPE_2II_F
+      Protected pf7.GDEXF2II = *m\func
+      Protected pr7.d = pf7(*instance, GDEX_ArgL(*args, 0), GDEX_ArgL(*args, 1))
+      If *r_ret
+        PokeD(*r_ret, pr7)
+      EndIf
+    Case #GDEX_SHAPE_2FF_I
+      Protected pi8.GDEXI2FF = *m\func
+      Protected sr8.i = pi8(*instance, GDEX_ArgD(*args, 0), GDEX_ArgD(*args, 1))
+      If *r_ret
+        PokeI(*r_ret, sr8)
+      EndIf
+    Case #GDEX_SHAPE_2FI_I
+      Protected pi9.GDEXI2FI = *m\func
+      Protected sr9.i = pi9(*instance, GDEX_ArgD(*args, 0), GDEX_ArgL(*args, 1))
+      If *r_ret
+        PokeI(*r_ret, sr9)
+      EndIf
+    Case #GDEX_SHAPE_2IF_I
+      Protected pi10.GDEXI2IF = *m\func
+      Protected sr10.i = pi10(*instance, GDEX_ArgL(*args, 0), GDEX_ArgD(*args, 1))
+      If *r_ret
+        PokeI(*r_ret, sr10)
+      EndIf
+    Case #GDEX_SHAPE_2II_I
+      Protected pi11.GDEXI2II = *m\func
+      Protected sr11.i = pi11(*instance, GDEX_ArgL(*args, 0), GDEX_ArgL(*args, 1))
+      If *r_ret
+        PokeI(*r_ret, sr11)
+      EndIf
+    Case #GDEX_SHAPE_ARGS
+      ; Godot has already unpacked every argument natively and allocated the
+      ; return slot, so the callee gets them exactly as they arrived.
+      Protected gb.GDEXArgs = *m\func
+      gb(*instance, *args, *r_ret)
   EndSelect
 EndProcedure
 
 ; ===========================================================================
 ; WHAT A bind_func DECLARES
 ; ===========================================================================
+
+; How many arguments a shape carries. The typed single-argument shapes imply
+; it, so an entry gets its arity from the shape unless the caller states a
+; whole signature (the generic shape and the multi-argument typed ones).
+Procedure.l GDEX_ShapeArity(shape.l)
+  Select shape
+    Case #GDEX_SHAPE_VOID_1F, #GDEX_SHAPE_VOID_1I, #GDEX_SHAPE_F64_1F
+      ProcedureReturn 1
+    Case #GDEX_SHAPE_BUILTIN_ARG, #GDEX_SHAPE_BUILTIN_ARG_RET
+      ProcedureReturn 1
+    Case #GDEX_SHAPE_2FF_VOID To #GDEX_SHAPE_2II_I
+      ProcedureReturn 2
+  EndSelect
+  ProcedureReturn 0
+EndProcedure
+
+; Which typed two-argument shape a scalar maps to. -1 means "not a scalar",
+; which sends the method to the generic shape instead.
+Procedure.l GDEX_ScalarArgKind(vtype.l)
+  If vtype = #FLOAT
+    ProcedureReturn 0
+  ElseIf vtype = #INT
+    ProcedureReturn 1
+  EndIf
+  ProcedureReturn -1
+EndProcedure
+
+Procedure.l GDEX_ScalarRetKind(vtype.l)
+  If vtype = #VOID
+    ProcedureReturn 0
+  ElseIf vtype = #FLOAT
+    ProcedureReturn 1
+  ElseIf vtype = #INT
+    ProcedureReturn 2
+  EndIf
+  ProcedureReturn -1
+EndProcedure
 
 Procedure GDEX_AddMethodEntry(method_name.s, func.i, shape.l, arg_meta.l)
   Protected *ci.GDClassInfo = gdex_current
@@ -578,6 +855,7 @@ Procedure GDEX_AddMethodEntry(method_name.s, func.i, shape.l, arg_meta.l)
   *ci\methods[i]\func = func
   *ci\methods[i]\shape = shape
   *ci\methods[i]\arg_meta = arg_meta
+  *ci\methods[i]\argc = GDEX_ShapeArity(shape)
   *ci\method_count = i + 1
 EndProcedure
 
@@ -604,10 +882,43 @@ Procedure GDEX_AddBuiltinMethod(method_name.s, func.i, arity.l, arg_type.l, arg_
   EndIf
 
   Protected i = before
-  *ci\methods[i]\arg_type = arg_type
-  *ci\methods[i]\arg_size = arg_size
+  ; arity 0 is a return with no arguments; 1 and 2 both describe one argument.
+  If arity = 0
+    *ci\methods[i]\argc = 0
+  Else
+    *ci\methods[i]\argc = 1
+    *ci\methods[i]\arg_type[0] = arg_type
+    *ci\methods[i]\arg_size[0] = arg_size
+  EndIf
   *ci\methods[i]\ret_type = ret_type
   *ci\methods[i]\ret_size = ret_size
+EndProcedure
+
+; The general form: a whole signature at once, for the shapes that carry more
+; than one declared argument. Sizes are derived from the Variant types, so the
+; caller states each argument once.
+Procedure GDEX_AddMethodFull(method_name.s, func.i, shape.l, argc.l, t0.l, t1.l, t2.l, t3.l, ret_type.l)
+  Protected *ci.GDClassInfo = gdex_current
+  If Not *ci
+    ProcedureReturn
+  EndIf
+  Protected before.l = *ci\method_count
+  GDEX_AddMethodEntry(method_name, func, shape, 0)
+  ; The same guard as GDEX_AddBuiltinMethod: a full table must not rewrite the
+  ; previous method's signature.
+  If *ci\method_count <> before + 1
+    ProcedureReturn
+  EndIf
+  Protected Dim ts.l(#GDEX_MAX_METHOD_ARGS - 1)
+  ts(0) = t0 : ts(1) = t1 : ts(2) = t2 : ts(3) = t3
+  Protected i
+  For i = 0 To argc - 1
+    *ci\methods[before]\arg_type[i] = ts(i)
+    *ci\methods[before]\arg_size[i] = GDEX_VariantTypeSize(ts(i))
+  Next i
+  *ci\methods[before]\argc = argc
+  *ci\methods[before]\ret_type = ret_type
+  *ci\methods[before]\ret_size = GDEX_VariantTypeSize(ret_type)
 EndProcedure
 
 Procedure GDEX_AddProp(prop_name.s, ptype.l, psize.l, getter.i, setter.i)
@@ -655,8 +966,6 @@ Procedure GDEX_RegisterMethod(*ci.GDClassInfo, i.l)
   Protected *m.GDMethodEntry = @*ci\methods[i]
   Protected info.GDExtensionClassMethodInfo
   Protected retinfo.GDExtensionPropertyInfo
-  Protected arginfo.GDExtensionPropertyInfo
-  Protected argmeta.l
 
   info\name = @*m\name
   info\method_userdata = *m
@@ -672,20 +981,28 @@ Procedure GDEX_RegisterMethod(*ci.GDClassInfo, i.l)
   info\default_argument_count = 0
   info\default_arguments = #Null
 
-  ; Everything below is derived from the shape, so a new shape only has to be
-  ; added to GDEX_ShapeArgType / GDEX_ShapeRetType and the two dispatchers.
-  Protected atype.l = GDEX_MethodArgType(*m)
-  If atype <> #GDEXTENSION_VARIANT_TYPE_NIL
-    arginfo\type = atype
-    arginfo\name = @gdex_empty_sn
-    arginfo\class_name = @gdex_empty_sn
-    arginfo\hint = 0
-    arginfo\hint_string = @gdex_empty_string
-    arginfo\usage = #PROPERTY_USAGE_DEFAULT
-    argmeta = GDEX_TypeMeta(atype)
-    info\argument_count = 1
-    info\arguments_info = @arginfo
-    info\arguments_metadata = @argmeta
+  ; Every declared argument is reported, in order, so GDScript can check the
+  ; call and the method gets a real signature rather than an opaque one. The
+  ; types come from the shape, so a new shape only has to be added to
+  ; GDEX_MethodArgType / GDEX_MethodRetType and the two dispatchers.
+  If *m\argc > 0
+    Protected Dim arginfos.GDExtensionPropertyInfo(*m\argc - 1)
+    Protected Dim argmetas.l(*m\argc - 1)
+    Protected ai.l
+    Protected atype.l
+    For ai = 0 To *m\argc - 1
+      atype = GDEX_MethodArgType(*m, ai)
+      arginfos(ai)\type = atype
+      arginfos(ai)\name = @gdex_empty_sn
+      arginfos(ai)\class_name = @gdex_empty_sn
+      arginfos(ai)\hint = 0
+      arginfos(ai)\hint_string = @gdex_empty_string
+      arginfos(ai)\usage = #PROPERTY_USAGE_DEFAULT
+      argmetas(ai) = GDEX_TypeMeta(atype)
+    Next ai
+    info\argument_count = *m\argc
+    info\arguments_info = @arginfos(0)
+    info\arguments_metadata = @argmetas(0)
   EndIf
 
   Protected rtype.l = GDEX_MethodRetType(*m)
@@ -992,7 +1309,7 @@ EndProcedure
 ; ===========================================================================
 
 ; ClassDB::bind_method - pick the dispatch shape from the Variant types.
-Procedure GDEX_BindMethodImpl(Name.s, A1.s, A2.s, A3.s, Proc.i, RetType.l, Arg0.l, Arg1.l)
+Procedure GDEX_BindMethodImpl(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l, Arg0.l, Arg1.l, Arg2.l, Arg3.l)
   Protected *ci.GDClassInfo = gdex_current
   If Not *ci
     ProcedureReturn
@@ -1001,22 +1318,28 @@ Procedure GDEX_BindMethodImpl(Name.s, A1.s, A2.s, A3.s, Proc.i, RetType.l, Arg0.
     GDEX_Fail("[gdex] bind_method " + Name + ": no procedure given")
     ProcedureReturn
   EndIf
-  If Arg1 <> #GDEX_NO_TYPE
-    GDEX_Fail("[gdex] bind_method " + Name + ": a method takes at most one argument")
-    ProcedureReturn
-  EndIf
 
+  ; The declared arguments, in order. #GDEX_NO_TYPE marks a slot the caller did
+  ; not supply, and the first one ends the list - a gap is not a signature.
+  Protected Dim ts.l(#GDEX_MAX_METHOD_ARGS - 1)
+  ts(0) = Arg0 : ts(1) = Arg1 : ts(2) = Arg2 : ts(3) = Arg3
   Protected argc.l = 0
-  If Arg0 <> #GDEX_NO_TYPE
-    argc = 1
-  EndIf
+  Protected k.l
+  For k = 0 To #GDEX_MAX_METHOD_ARGS - 1
+    If ts(k) = #GDEX_NO_TYPE
+      Break
+    EndIf
+    argc = argc + 1
+  Next k
 
   ; A type the framework cannot marshal has size 0; say so rather than
   ; registering a method that would read nothing.
-  If argc = 1 And GDEX_VariantTypeSize(Arg0) = 0
-    GDEX_Fail("[gdex] bind_method " + Name + ": argument type is not a value type")
-    ProcedureReturn
-  EndIf
+  For k = 0 To argc - 1
+    If GDEX_VariantTypeSize(ts(k)) = 0
+      GDEX_Fail("[gdex] bind_method " + Name + ": argument " + Str(k + 1) + " is not a value type")
+      ProcedureReturn
+    EndIf
+  Next k
   If RetType <> #VOID And GDEX_VariantTypeSize(RetType) = 0
     GDEX_Fail("[gdex] bind_method " + Name + ": return type is not a value type")
     ProcedureReturn
@@ -1033,15 +1356,34 @@ Procedure GDEX_BindMethodImpl(Name.s, A1.s, A2.s, A3.s, Proc.i, RetType.l, Arg0.
     Else
       GDEX_AddBuiltinMethod(Name, Proc, 0, 0, 0, RetType, GDEX_VariantTypeSize(RetType))
     EndIf
-  Else
-    If Arg0 = #FLOAT And RetType = #VOID
+  ElseIf argc = 1
+    If ts(0) = #FLOAT And RetType = #VOID
       GDEX_AddMethodEntry(Name, Proc, #GDEX_SHAPE_VOID_1F, #GDEXTENSION_METHOD_ARGUMENT_METADATA_REAL_IS_DOUBLE)
-    ElseIf Arg0 = #INT And RetType = #VOID
+    ElseIf ts(0) = #INT And RetType = #VOID
       GDEX_AddMethodEntry(Name, Proc, #GDEX_SHAPE_VOID_1I, 0)
     ElseIf RetType = #VOID
-      GDEX_AddBuiltinMethod(Name, Proc, 1, Arg0, GDEX_VariantTypeSize(Arg0), 0, 0)
+      GDEX_AddBuiltinMethod(Name, Proc, 1, ts(0), GDEX_VariantTypeSize(ts(0)), 0, 0)
     Else
-      GDEX_AddBuiltinMethod(Name, Proc, 2, Arg0, GDEX_VariantTypeSize(Arg0), RetType, GDEX_VariantTypeSize(RetType))
+      GDEX_AddBuiltinMethod(Name, Proc, 2, ts(0), GDEX_VariantTypeSize(ts(0)), RetType, GDEX_VariantTypeSize(RetType))
+    EndIf
+  Else
+    ; Two or more arguments. C++ reads a whole signature off the member
+    ; function pointer; PureBasic cannot, so a two-scalar signature picks one
+    ; of the typed shapes and everything else goes through the generic one,
+    ; which carries the declared types instead of the signature and so has no
+    ; arity limit.
+    Protected a0k.l = -1
+    Protected a1k.l = -1
+    Protected rk.l = -1
+    If argc = 2
+      a0k = GDEX_ScalarArgKind(ts(0))
+      a1k = GDEX_ScalarArgKind(ts(1))
+      rk = GDEX_ScalarRetKind(RetType)
+    EndIf
+    If a0k >= 0 And a1k >= 0 And rk >= 0
+      GDEX_AddMethodFull(Name, Proc, #GDEX_SHAPE_2FF_VOID + rk * 4 + a0k * 2 + a1k, argc, ts(0), ts(1), ts(2), ts(3), RetType)
+    Else
+      GDEX_AddMethodFull(Name, Proc, #GDEX_SHAPE_ARGS, argc, ts(0), ts(1), ts(2), ts(3), RetType)
     EndIf
   EndIf
 EndProcedure

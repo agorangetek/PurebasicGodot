@@ -23,7 +23,9 @@
 ; argument and return types off the member function pointer it is handed, and a
 ; PureBasic procedure pointer carries no signature. So the types are passed
 ; explicitly, using the same #FLOAT / #VECTOR2 / #VOID constants that
-; PropertyInfo and ADD_SIGNAL use. The trailing types are (return, arg0, arg1).
+; PropertyInfo and ADD_SIGNAL use. The trailing types are
+; (return, arg0, arg1, arg2, arg3), and a method may declare up to four
+; arguments - past that the callee could not name them anyway.
 ;
 ; The default values below are the literals 0 and -1 rather than #VOID and
 ; #GDEX_NO_TYPE: PureBasic folds a declared procedure's defaults in the same
@@ -37,11 +39,11 @@ DeclareModule ClassDB
   Global add_property_fn.i
   Global add_signal_fn.i
 
-  Prototype BindMethodFn(Name.s, A1.s, A2.s, A3.s, Proc.i, RetType.l, Arg0.l, Arg1.l)
+  Prototype BindMethodFn(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l, Arg0.l, Arg1.l, Arg2.l, Arg3.l)
   Prototype AddPropertyFn(PropType.l, PropName.s, SetterName.s, GetterName.s)
   Prototype AddSignalFn(SigName.s, T0.l, N0.s, T1.l, N1.s, T2.l, N2.s, T3.l, N3.s)
 
-  Declare bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1)
+  Declare bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1, Arg2.l = -1, Arg3.l = -1)
   Declare add_property(PropType.l, PropName.s, SetterName.s, GetterName.s)
   Declare add_signal(SigName.s, T0.l = 0, N0.s = "", T1.l = 0, N1.s = "", T2.l = 0, N2.s = "", T3.l = 0, N3.s = "")
 EndDeclareModule
@@ -50,9 +52,9 @@ Module ClassDB
   EnableExplicit
 
   ; ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDExample_set_amplitude(), #VOID, #FLOAT)
-  Procedure bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1)
+  Procedure bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1, Arg2.l = -1, Arg3.l = -1)
     Protected f.BindMethodFn = bind_method_fn
-    f(Name, A1, A2, A3, Proc, RetType, Arg0, Arg1)
+    f(Name, A1, A2, A3, A4, Proc, RetType, Arg0, Arg1, Arg2, Arg3)
   EndProcedure
 
   ; ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")

@@ -20,7 +20,7 @@ extends Node
 
 func _ready() -> void:
 	print("=== PB GDExtension demo ===")
-
+	
 	# --- a Node2D extension class, from GDScript --------------------------
 	var ex := GDExample.new()
 	ex.amplitude = 10.0
@@ -88,6 +88,22 @@ func _ready() -> void:
 		"  (GDScript accepted it as Vector2)")
 	b.span = Vector2(1.5, 2.5)
 	print("  b.span = Vector2(1.5,2.5) -> span       = ", b.span)
+
+	# --- methods that take more than one argument --------------------------
+	# C++ gets a whole signature from the member function pointer; here the
+	# trailing constants of bind_method are the signature, and past one
+	# argument the callee reads its arguments out of *args.
+	print("--- multi-argument methods ---")
+	var before_phase: float = b.get_phase()
+	var before_amp: float = b.amplitude
+	b.move_by(2.0, 3.0)
+	print("  move_by(2.0, 3.0)   (2 args, void)     phase %.4f -> %.4f, amplitude %.4f -> %.4f"
+		% [before_phase, b.get_phase(), before_amp, b.amplitude])
+	print("  mix(2.0, 4.0)       (2 args, returns float) = ", b.mix(2.0, 4.0))
+	print("  blend(10, 20, 0.25) (3 args, returns float) = ", b.blend(10.0, 20.0, 0.25))
+	var grown: Rect2 = b.grow_by(Vector2(3.0, 4.0), 2.0)
+	print("  grow_by(Vector2(3,4), 2.0) (builtin + float) = ", grown)
+	print("  steps(6, 7)         (2 ints, returns int) = ", b.steps(6, 7))
 
 	# --- a spread of other builtins, same mechanism ------------------------
 	print("--- other builtins, all through the generic path ---")

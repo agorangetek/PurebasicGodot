@@ -126,15 +126,14 @@ Keeping them apart is deliberate:
 
 * the build stays independent of Godot's 7 MB API dump, which lives in a
   sibling checkout and has nothing to do with compiling your code;
-* `generated/` is produced once and then left alone — so a build cannot
+* `generated/` is produced once and then left alone, so a build cannot
   silently change what your extension is bound against;
 * a build failure means your code is wrong, not that a JSON dump moved.
 
-**In this repository `generated/*.pbi` is not tracked** (see `.gitignore`): the
-870 class files are output of `generate-bindings.sh`, so a clone runs it once
-before the first build. Only the hand-written `generated/helpers/` is source.
-Nothing else depends on this: `./build.sh` never touches `generated/` either
-way.
+Whether `generated/` is committed is a per-repo choice and nothing here depends
+on it: **this project's published repo excludes `generated/*.pbi`** (only the
+hand-written `generated/helpers/` is tracked), so a fresh clone runs
+`./generate-bindings.sh` once before its first build.
 
 If `generated/` is missing, `build.sh` says so and stops rather than trying to
 fix it:
@@ -144,8 +143,8 @@ generated/ is empty or missing.
 Run ./generate-bindings.sh once to create it.
 ```
 
-The generator can produce the whole library: all 870 classes that have methods,
-one self-contained file each, 11 MB on disk once generated.
+The generator can produce the whole library: all 870 classes that have
+methods, one self-contained file each, 11 MB on disk once generated.
 `generate-bindings.sh` with no class arguments generates everything; name
 classes to generate just those:
 
@@ -164,9 +163,10 @@ class never deletes the others.
 
 `GDEXT_API` points the generator at a different dump. Without it, the script
 looks for `../prototype_gdext/godot-cpp/gdextension/extension_api-4-7.json` — a
-4.7 dump that only exists in the author's working checkout, so **in a fresh
-clone set `GDEXT_API`**, or make your own with
-`godot --headless --dump-extension-api` and point at that.
+4.7 dump that only exists in the author's working checkout, and the one the
+`generated/` here was produced from — so **in a fresh clone set `GDEXT_API`**,
+or make your own with `godot --headless --dump-extension-api` and point at
+that.
 
 To use a class:
 
@@ -229,7 +229,7 @@ unsigned.
 | `gdex_class.pbi` | The framework: `RegisterGDClass`, every generic callback, the macros. |
 | `tools/pb_gdext_wizard.pb` | The generator, in PureBasic. `--outdir`, `--out`, `--check`, `--stats`. |
 | `generate-bindings.sh` | The one-time step. Writes `generated/` from the API dump. |
-| `generated/` | 870 self-contained files, one per engine class, produced by `generate-bindings.sh`. **Not tracked here** (see `.gitignore`); `build.sh` never touches it. |
+| `generated/` | 870 self-contained files, one per engine class, produced by `generate-bindings.sh`. Not tracked in this project's repo; `build.sh` never touches it. |
 | `generated/helpers/` | The one hand-written thing under `generated/`: the godot-cpp-shaped class surface. See [The helper layer](#the-helper-layer). |
 | `gdex_bouncer.pbi` | `GDBouncer`, a second Node2D class with its own `bounced` signal. |
 | `gdex_ticker.pbi` | `GDTicker`, a Node installed as the `GDNativeTicker` singleton. |
@@ -310,12 +310,52 @@ Two conventions:
 * **The Variant type and the structure must agree.** Pass the constant and the
   matching type from `gdex_types.pbi`.
 
-The binding call states the shape rather than naming a macro for it: the
-trailing `#`-constants of `ClassDB::bind_method` are (return, arg0), and the
-procedure's own signature follows from them - `() -> T` is
-`(..., @Proc(), #T)`, `(T) -> void` is `(..., @Proc(), #VOID, #T)`, and
-`(T) -> U` is `(..., @Proc(), #U, #T)`. See the table under
-[Declaring a class](#declaring-a-class).
+The binding call states the signature rather than naming a macro for it: the
+trailing `#`-constants of `ClassDB::bind_method` are
+`(return, arg0, arg1, arg2, arg3)`, and the procedure's own signature follows
+from them - `() -> T` is `(..., @Proc(), #T)`, `(T) -> void` is
+`(..., @Proc(), #VOID, #T)`, and `(T) -> U` is `(..., @Proc(), #U, #T)`. See
+the table under [Declaring a class](#declaring-a-class).
+
+### More than one argument
+
+C++ reads a whole signature off the member function pointer, so godot-cpp never
+counts arguments. A PureBasic procedure pointer carries no signature, and there
+are no templates or varargs, so every signature is a shape the framework has to
+be told about. A method may declare up to `#GDEX_MAX_METHOD_ARGS` (4).
+
+Two arguments that are both scalars name their parameters, exactly as in C++:
+
+```purebasic
+Procedure.d GDBouncer_mix(*self.GDBouncer, a.d, b.d)
+  ProcedureReturn *self\amplitude * a + *self\speed * b
+EndProcedure
+ClassDB::bind_method(D_METHOD("mix", "a", "b"), @GDBouncer_mix(), #FLOAT, #FLOAT, #FLOAT)
+```
+
+Everything the typed shapes do not cover - three or more arguments, or a
+builtin anywhere in a multi-argument list - goes through one generic shape:
+
+```purebasic
+Procedure GDBouncer_grow_by(*self.GDBouncer, *args, *out.GDRect2)
+  Protected *v.GDVector2 = GDEX_ArgPtr(*args, 0)
+  Protected f.d = GDEX_ArgD(*args, 1)
+  *out\size\x = *v\x * f
+  *out\size\y = *v\y * f
+EndProcedure
+ClassDB::bind_method(D_METHOD("grow_by", "size", "factor"), @GDBouncer_grow_by(), #RECT2, #VECTOR2, #FLOAT)
+```
+
+A generic-shape callee always has the shape `(*self, *args, *out)`. `*args` is
+an array of pointers, one per declared argument, each aimed at that argument's
+native value, and `GDEX_ArgPtr` / `GDEX_ArgD` / `GDEX_ArgL` read the Nth. The
+result is written through `*out`, which is storage for the declared return type
+and is `0` when the method returns nothing.
+
+That is deliberately the shape of the raw GDExtension `call_func` ABI - the
+array-of-pointers form godot-cpp's templates exist to hide. Carrying the types
+in the entry instead of in the signature is what makes arity unlimited here
+too, rather than capped at the typed signatures.
 
 ### What can be returned
 
@@ -395,9 +435,9 @@ IncludeFile "bindlib/Node2D.pbi"    ; Sprite2D, CharacterBody2D, ...
 IncludeFile "bindlib/AnimationPlayer.pbi"
 ```
 
-`generated/` is reproducible — delete it freely: `generate-bindings.sh`
-re-creates the class files byte for byte, and writes `generated/helpers/` back
-if it is gone. There is no *per-class* helper layer:
+`generated/` is reproducible — delete it freely:
+`generate-bindings.sh` re-creates the class files byte for byte, and writes
+`generated/helpers/` back if it is gone. There is no *per-class* helper layer:
 for a method call, use the generated name directly — `Node2D::set_position(*self, @v)`.
 The helpers that do exist are generic and live in their own folder (see
 [The helper layer](#the-helper-layer)). `--out` still exists for writing one
@@ -558,10 +598,11 @@ with an error rather than a silent no-op.
 
 1. **Types are explicit.** C++ reads argument and return types off the member
    function pointer; a PureBasic procedure pointer carries no signature, so
-   `ClassDB::bind_method` takes `(return, arg0, arg1)` as `#VOID` / `#FLOAT` /
-   `#VECTOR2` constants. A method takes at most one argument, because the
-   generic dispatcher has a shape per call signature rather than a variadic
-   call.
+   `ClassDB::bind_method` takes `(return, arg0, arg1, arg2, arg3)` as
+   `#VOID` / `#FLOAT` / `#VECTOR2` constants. C++ also gets a call path per
+   signature for free from that pointer; here each one is a shape, so beyond
+   the typed signatures a method's arguments travel through the generic shape
+   instead - see [More than one argument](#more-than-one-argument).
 2. **`ADD_SIGNAL` takes the pairs directly** - `ADD_SIGNAL("bounced", #VECTOR2,
    "position")` - rather than `ADD_SIGNAL(MethodInfo(...))`. PureBasic expands
    an inner macro while it is still parsing the outer one's arguments, and two
@@ -917,3 +958,25 @@ structs and embedded arrays are covered), `_process` running under a `Node` in
 the tree, a signal emitted from PureBasic arriving in GDScript with a Vector2
 payload, dynamic `set()`/`get()` through the class callbacks, and a
 PureBasic-managed `List` living inside an extension instance (gotcha 4).
+
+It also covers multi-argument methods on all three paths: a typed
+`(float, float) -> void`, a typed `(float, float) -> float`, a typed
+`(int, int) -> int`, a generic three-argument method, and a generic method
+mixing a `Vector2` argument with a float and returning a `Rect2`.
+
+## Todo
+
+- [x] **One argument per method.** Done: two scalar arguments use a typed
+      shape, and anything beyond that goes through a generic shape that carries
+      the declared types instead of the signature, so arity is unlimited. See
+      [More than one argument](#more-than-one-argument).
+- [ ] **Pointer-typed values** — `String`, `StringName`, `Object`, `Array`,
+      `Dictionary` — are rejected by `bind_method`, `ADD_PROPERTY` and
+      `ADD_SIGNAL`. Only value types cross the boundary.
+- [ ] **Builtin and utility methods.** A `Vector2` crosses as data, but
+      `Vector2.length()` and `@GlobalScope` functions cannot be called.
+- [ ] **One virtual.** `_process` is wired; no other engine virtual is.
+- [ ] **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`,
+      and forgetting one fails silently at runtime rather than at compile time.
+- [ ] **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
+      properties.

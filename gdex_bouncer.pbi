@@ -171,6 +171,54 @@ Procedure GDBouncer_grow(*self.GDBouncer, *in.GDRect2, *out.GDRect2)
   *out\size\y = *in\size\y * *self\phase
 EndProcedure
 
+; ---- multi-argument methods ------------------------------------------------
+;
+; C++ reads a whole signature off the member function pointer. PureBasic has no
+; templates and a procedure pointer carries no signature, so a method with more
+; than one argument is handed its arguments as an array of pointers to their
+; native values: argument i is GDEX_ArgPtr/GDEX_ArgD/GDEX_ArgL(*args, i). The
+; trailing constants of bind_method are what tell the framework how to fill
+; them, and they are (return, arg0, arg1, ...).
+;
+; A generic-shape callee always has the shape (*self, *args, *out), and it
+; writes its result through *out - which is 0 when the method returns nothing.
+
+; (float, float) -> void
+; Two scalars name their parameters, exactly as in C++: this is a typed shape,
+; so no Variant crosses the boundary and no *args unpacking is needed.
+Procedure GDBouncer_move_by(*self.GDBouncer, dx.d, dy.d)
+  *self\phase     + dx
+  *self\amplitude + dy
+EndProcedure
+
+; (float, float) -> float
+Procedure.d GDBouncer_mix(*self.GDBouncer, a.d, b.d)
+  ProcedureReturn *self\amplitude * a + *self\speed * b
+EndProcedure
+
+; (int, int) -> int - the same block of shapes, a different kind
+Procedure.l GDBouncer_steps(*self.GDBouncer, a.l, b.l)
+  ProcedureReturn (a * b) + *self\amplitude
+EndProcedure
+
+; (float, float, float) -> float
+Procedure GDBouncer_blend(*self.GDBouncer, *args, *out)
+  Protected a.d = GDEX_ArgD(*args, 0)
+  Protected b.d = GDEX_ArgD(*args, 1)
+  Protected t.d = GDEX_ArgD(*args, 2)
+  PokeD(*out, a + (b - a) * t)
+EndProcedure
+
+; (Vector2, float) -> Rect2 - a builtin alongside a scalar
+Procedure GDBouncer_grow_by(*self.GDBouncer, *args, *out.GDRect2)
+  Protected *v.GDVector2 = GDEX_ArgPtr(*args, 0)
+  Protected f.d = GDEX_ArgD(*args, 1)
+  *out\position\x = 0.0
+  *out\position\y = 0.0
+  *out\size\x = *v\x * f
+  *out\size\y = *v\y * f
+EndProcedure
+
 Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("get_amplitude"), @GDBouncer_get_amplitude(), #FLOAT)
   ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDBouncer_set_amplitude(), #VOID, #FLOAT)
@@ -192,6 +240,15 @@ Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("frame"), @GDBouncer_frame(), #TRANSFORM2D)
   ClassDB::bind_method(D_METHOD("basis3"), @GDBouncer_basis3(), #TRANSFORM3D)
   ClassDB::bind_method(D_METHOD("grow", "in"), @GDBouncer_grow(), #RECT2, #RECT2)
+
+  ; Multi-argument methods. A 2-argument scalar method that fits a typed shape
+  ; is dispatched without a Variant round trip; everything else - three or more
+  ; arguments, or a builtin anywhere in the list - uses the generic shape.
+  ClassDB::bind_method(D_METHOD("move_by", "dx", "dy"), @GDBouncer_move_by(), #VOID, #FLOAT, #FLOAT)
+  ClassDB::bind_method(D_METHOD("mix", "a", "b"), @GDBouncer_mix(), #FLOAT, #FLOAT, #FLOAT)
+  ClassDB::bind_method(D_METHOD("blend", "a", "b", "t"), @GDBouncer_blend(), #FLOAT, #FLOAT, #FLOAT, #FLOAT)
+  ClassDB::bind_method(D_METHOD("grow_by", "size", "factor"), @GDBouncer_grow_by(), #RECT2, #VECTOR2, #FLOAT)
+  ClassDB::bind_method(D_METHOD("steps", "a", "b"), @GDBouncer_steps(), #INT, #INT, #INT)
 
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")

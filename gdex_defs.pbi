@@ -137,12 +137,41 @@ IncludeFile "gdex_types.pbi"
 #GDEX_SHAPE_BUILTIN_ARG     = 7 ; Procedure(*self, *in)
 #GDEX_SHAPE_BUILTIN_ARG_RET = 8 ; Procedure(*self, *in, *out)
 
+; Everything the typed shapes cannot express - three or more arguments, or a
+; builtin anywhere in a multi-argument signature:
+;     Procedure Foo(*self, *args, *out)
+; *args points at an array of pointers, one per declared argument, each aimed
+; at that argument's native value; *out points at storage for the declared
+; return type, or is 0 when the method returns nothing. This is the shape of
+; the raw GDExtension call_func ABI that godot-cpp's templates hide from you.
+#GDEX_SHAPE_ARGS = 9
+
+; Two-argument methods whose arguments are both scalars. C++ gets these from
+; the member function pointer; PureBasic has no templates, so each signature is
+; a shape. The block is contiguous and ordered (return, arg0, arg1), which is
+; what lets the shape be computed from the types instead of looked up:
+;     shape = #GDEX_SHAPE_2FF_VOID + ret_kind * 4 + arg0_kind * 2 + arg1_kind
+; where a kind is 0 for float, 1 for int, and the return kind adds 0 for void.
+#GDEX_SHAPE_2FF_VOID = 10
+#GDEX_SHAPE_2FI_VOID = 11
+#GDEX_SHAPE_2IF_VOID = 12
+#GDEX_SHAPE_2II_VOID = 13
+#GDEX_SHAPE_2FF_F = 14
+#GDEX_SHAPE_2FI_F = 15
+#GDEX_SHAPE_2IF_F = 16
+#GDEX_SHAPE_2II_F = 17
+#GDEX_SHAPE_2FF_I = 18
+#GDEX_SHAPE_2FI_I = 19
+#GDEX_SHAPE_2IF_I = 20
+#GDEX_SHAPE_2II_I = 21
+
 #GDEX_MAX_PROPS       = 32
 #GDEX_MAX_METHODS     = 64
 #GDEX_MAX_CLASSES     = 8
 #GDEX_MAX_SINGLETONS  = 8
 #GDEX_MAX_SIGNALS     = 8
 #GDEX_MAX_SIGNAL_ARGS = 4
+#GDEX_MAX_METHOD_ARGS = 4 ; a bound_method may declare at most this many
 #GDEX_NO_TYPE         = -1 ; "this argument was not supplied"
 
 ; A Godot StringName is one pointer of storage. It is interned by Godot, so
@@ -179,9 +208,11 @@ Structure GDMethodEntry Align #PB_Structure_AlignC
   func.i
   shape.l
   arg_meta.l
-  ; Only used by the generic builtin shapes.
-  arg_type.l
-  arg_size.l
+  ; The declared arguments, in order. The one-argument builtin shapes and the
+  ; generic shape read these; the typed scalar shapes imply their own types.
+  argc.l
+  arg_type.l[#GDEX_MAX_METHOD_ARGS]
+  arg_size.l[#GDEX_MAX_METHOD_ARGS]
   ret_type.l
   ret_size.l
 EndStructure

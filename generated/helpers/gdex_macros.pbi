@@ -12,9 +12,9 @@
 ; produce - they only splice the type and name into the enclosing call.
 ; ===========================================================================
 
-; A method's name followed by up to three argument names.
-Macro D_METHOD(Name, A1 = "", A2 = "", A3 = "")
-  Name, A1, A2, A3
+; A method's name followed by up to four argument names.
+Macro D_METHOD(Name, A1 = "", A2 = "", A3 = "", A4 = "")
+  Name, A1, A2, A3, A4
 EndMacro
 
 ; A type and a name, spliced into ADD_PROPERTY or ADD_SIGNAL.
