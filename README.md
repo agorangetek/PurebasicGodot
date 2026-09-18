@@ -238,7 +238,9 @@ unsigned.
 | `gdexample.pb` | The recovered file, **verbatim**. The entry point and the GDExample class. |
 | `gdex_defs.pbi` | Constants, the framework structures, and shared globals. |
 | `gdex_api.pbi` | `load_api`, the resolved function pointers, StringName/Variant helpers. |
-| `gdextension_interface.pbi` | The recovered transcription of Godot's whole `GDExtensionInterface`. |
+| `gdextension_interface.pbi` | The recovered transcription of Godot's whole `GDExtensionInterface`. Verified against the header below by `tools/check-interface.sh`. |
+| `gdextension_interface.h` | Godot's real header, vendored. Not compiled into the extension — it is the authority the transcription is checked against. |
+| `tools/check-interface.sh` | Compares the two. `iface_sizes.pb` / `iface_sizes.c` are its two halves. |
 | `gdex_class.pbi` | The framework: `RegisterGDClass`, every generic callback, the macros. |
 | `tools/pb_gdext_wizard.pb` | The generator, in PureBasic. `--outdir`, `--out`, `--check`, `--stats`. |
 | `generate-bindings.sh` | The one-time step. Writes `generated/` from the API dump. |
@@ -862,6 +864,43 @@ with no crash at all, the fourth is a crash at free time from mixing two
 allocation idioms, and the fifth is a lookup that returns null at the wrong
 initialization level.
 
+### 0. The transcription is checked, not trusted
+
+`gdextension_interface.pbi` was reconstructed by hand from Godot's header, and a
+transcription is only as good as the day it was made: a structure that gains,
+loses or reorders a field still compiles, and every field after the change is
+read from the wrong offset. Godot's real header is vendored beside it and
+`tools/check-interface.sh` compares the two — it prints `sizeof` from C and
+`SizeOf` from PureBasic and diffs them:
+
+```
+interface: all 19 structures match Godot's header
+```
+
+It is not a full structural check, but it catches the failure that matters, and
+it was checked in the negative direction by removing one `Align
+#PB_Structure_AlignC`:
+
+```
+-GDExtensionMethodInfo 96        +GDExtensionMethodInfo 80
+-GDExtensionPropertyInfo 48      +GDExtensionPropertyInfo 36
+-GDExtensionClassVirtualMethodInfo 88   +GDExtensionClassVirtualMethodInfo 80
+```
+
+Note what that shows: the two structures that *embed* `PropertyInfo` drifted
+with it, which is exactly how one missing alignment reaches everything
+downstream.
+
+**Why the header is not simply included instead.** `HeaderSection` can pull C
+into the translation unit, and it was tried first. Two things stop it being the
+build's mechanism: `pbcompiler` compiles the generated C from a temporary
+directory, so a relative `#include` does not resolve (the workspace's own
+inline-C examples use absolute paths, and every one of those paths is now dead);
+and PureBasic cannot use the header's declarations anyway — it mangles its own
+structures to `s_<lowercased-name>` and generates field access against that, so
+it needs its own `Structure` and `Prototype` declarations regardless. The header
+is therefore the *authority*, not the source.
+
 ### 1. PureBasic packs structures; C pads them
 
 `Structure Foo` in PureBasic has **no** alignment padding. Every
@@ -875,7 +914,8 @@ Without it, `GDExtensionClassCreationInfo6` is 156 bytes instead of 160 and
 Godot reads every pointer four bytes early. Carried through, that is what made
 the recovered Aug-19 `SimpleGDExtension` attempt fail, and it is why all 19
 structures in `gdextension_interface.pbi` were changed from the recovered text
-— the only edit made to that file.
+— the only edit made to that file. That it is the only one is now checked rather
+than asserted: see [gotcha 0](#0-the-transcription-is-checked-not-trusted).
 
 ### 2. Godot dereferences `PropertyInfo.name`, `.class_name` and `.hint_string`
 

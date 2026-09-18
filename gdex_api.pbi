@@ -362,4 +362,3 @@ Procedure load_api(*p_get_proc_address)
   g_string_new(@gdex_empty_string, UTF8(name))
   GDEX_Trace("[gdex] load_api end")
 EndProcedure
-
