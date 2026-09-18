@@ -105,6 +105,17 @@ func _ready() -> void:
 	print("  grow_by(Vector2(3,4), 2.0) (builtin + float) = ", grown)
 	print("  steps(6, 7)         (2 ints, returns int) = ", b.steps(6, 7))
 
+	# --- pointer-typed values ---------------------------------------------
+	# A String is a handle onto Godot's storage, not bytes: it is read and
+	# built with helpers, and the framework releases the native value after
+	# the call. Same mechanism for StringName, Object, Array, Dictionary.
+	print("--- Godot String across the boundary ---")
+	print("  label(\"hi\")          (String -> String)   = ", b.label("hi"))
+	print("  tag(\"hi\", 2.5)       (String, float)      = ", b.tag("hi", 2.5))
+	var sn: StringName = b.sn("named")
+	print("  sn(\"named\")          (String -> StringName) = ", sn,
+		"  type=", type_string(typeof(sn)))
+
 	# --- a spread of other builtins, same mechanism ------------------------
 	print("--- other builtins, all through the generic path ---")
 	print("  b.tint        (Color property)  = ", b.tint,

@@ -72,6 +72,8 @@ Prototype.i GDEXI2II(*self, a.l, b.l)
 ; Defined further down with the other table helpers, but the registration
 ; procedures above it need it, so it is declared here.
 Declare.l GDEX_VariantTypeSize(vtype.l)
+; Likewise: the dispatchers below release pointer-typed arguments with this.
+Declare GDEX_FreeValue(vtype.l, *p)
 
 ; ===========================================================================
 ; THE FRAMEWORK'S OWN BINDS
@@ -568,6 +570,10 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         Protected f6.GDEXBuiltinOut = *m\func
         f6(*instance, *rb)
         GDEX_WrapVariant(*r_ret, *m\ret_type, *rb)
+        ; Wrapping copies into the Variant; what the callee built is ours to
+        ; release, and for a pointer type that is the only thing that drops the
+        ; reference it took.
+        GDEX_FreeValue(*m\ret_type, *rb)
         FreeMemory(*rb)
       Else
         g_variant_new_nil(*r_ret)
@@ -578,6 +584,7 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         GDEX_ArgBuiltin(*args, *m\arg_type[0], *ab)
         Protected f7.GDEXBuiltinIn = *m\func
         f7(*instance, *ab)
+        GDEX_FreeValue(*m\arg_type[0], *ab)
         FreeMemory(*ab)
       EndIf
       g_variant_new_nil(*r_ret)
@@ -590,10 +597,12 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         Protected f8.GDEXBuiltinInOut = *m\func
         f8(*instance, *ain, *aout)
         GDEX_WrapVariant(*r_ret, *m\ret_type, *aout)
+        GDEX_FreeValue(*m\ret_type, *aout)
       Else
         g_variant_new_nil(*r_ret)
       EndIf
       If *ain
+        GDEX_FreeValue(*m\arg_type[0], *ain)
         FreeMemory(*ain)
       EndIf
       If *aout
@@ -681,6 +690,7 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
           ga(*instance, @ap(0), *ob)
           If *ob
             GDEX_WrapVariant(*r_ret, *m\ret_type, *ob)
+            GDEX_FreeValue(*m\ret_type, *ob)
             FreeMemory(*ob)
           Else
             g_variant_new_nil(*r_ret)
@@ -690,6 +700,7 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         EndIf
         For ai = 0 To nargs - 1
           If ab(ai)
+            GDEX_FreeValue(*m\arg_type[ai], ab(ai))
             FreeMemory(ab(ai))
           EndIf
         Next ai
@@ -1214,7 +1225,59 @@ EndProcedure
 ; Native size of a Variant type, for the generic builtin shape. Both the
 ; property path and ClassDB::bind_method need it, and both used to get it from
 ; a per-shape macro spelling out SizeOf(...).
+; ---- Types that cross as a Godot object, not as bytes ----------------------
+;
+; String, StringName, NodePath, Object, Array, Dictionary, Callable and Signal
+; all travel as a HANDLE onto storage Godot owns. The bytes cannot be copied
+; with FillMemory or released with FreeMemory: they are constructed from a
+; Variant and released through Godot's own destructor, or the reference counts
+; behind them leak. Plain builtins are the opposite - their bytes ARE the value,
+; which is why nothing here applies to them.
+
+Procedure.i GDEX_IsPtrType(vtype.l)
+  Select vtype
+    Case #GDEXTENSION_VARIANT_TYPE_STRING, #GDEXTENSION_VARIANT_TYPE_STRING_NAME
+      ProcedureReturn #True
+    Case #GDEXTENSION_VARIANT_TYPE_NODE_PATH, #GDEXTENSION_VARIANT_TYPE_OBJECT
+      ProcedureReturn #True
+    Case #GDEXTENSION_VARIANT_TYPE_CALLABLE, #GDEXTENSION_VARIANT_TYPE_SIGNAL
+      ProcedureReturn #True
+    Case #GDEXTENSION_VARIANT_TYPE_DICTIONARY, #GDEXTENSION_VARIANT_TYPE_ARRAY
+      ProcedureReturn #True
+  EndSelect
+  ProcedureReturn #False
+EndProcedure
+
+; Native sizes, taken from the API dump's float_64 configuration: one pointer,
+; except Callable and Signal, which are two.
+Procedure.i GDEX_PtrTypeSize(vtype.l)
+  If vtype = #GDEXTENSION_VARIANT_TYPE_CALLABLE Or vtype = #GDEXTENSION_VARIANT_TYPE_SIGNAL
+    ProcedureReturn 16
+  EndIf
+  ProcedureReturn 8
+EndProcedure
+
+; Release whatever a pointer-typed value owns. A no-op for everything else, so
+; callers can call it unconditionally.
+Procedure GDEX_FreeValue(vtype.l, *p)
+  If Not *p Or Not g_variant_get_ptr_destructor
+    ProcedureReturn
+  EndIf
+  If Not GDEX_IsPtrType(vtype)
+    ProcedureReturn
+  EndIf
+  Protected dtor.GDExtensionPtrDestructor = g_variant_get_ptr_destructor(vtype)
+  If dtor
+    dtor(*p)
+  EndIf
+EndProcedure
+
 Procedure.l GDEX_VariantTypeSize(vtype.l)
+  ; A pointer type has a size like any other - it is what the buffer holds that
+  ; differs - so reporting it here is what lets bind_method accept it.
+  If GDEX_IsPtrType(vtype)
+    ProcedureReturn GDEX_PtrTypeSize(vtype)
+  EndIf
   Select vtype
     Case #GDEXTENSION_VARIANT_TYPE_BOOL       : ProcedureReturn 1
     Case #GDEXTENSION_VARIANT_TYPE_INT        : ProcedureReturn 8

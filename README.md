@@ -395,15 +395,44 @@ are exercised, not just the flat ones.
 
 ### What is not covered
 
-`String`, `StringName`, `NodePath`, `Object`, `Dictionary`, `Array` and the
-`Packed*Array` family are pointer-sized Godot objects with their own
-constructors and destructors. They are **not** in `gdex_types.pbi` on purpose:
-copying them as raw bytes would be wrong. They work through the same machinery
-but need explicit create/destroy instead of a struct copy — allocate the native
-object, fill it via the interface, wrap it, then destroy it. `Object` returns
-additionally need reference-count handling for `RefCounted`-derived types.
+They are the **pointer types**, and they now cross the boundary — but not the
+way a builtin does. `String`, `StringName`, `NodePath`, `Object`, `Dictionary`,
+`Array`, `Callable` and `Signal` are handles onto storage Godot owns, so their
+bytes cannot be copied with `FillMemory` or released with `FreeMemory`. Passing
+one is a three-step borrow:
 
-`Callable` and `Signal` are 16 bytes and also carry ownership; same caveat.
+* the framework **constructs** the native value from the Variant (Godot's
+  per-type "to type" constructor),
+* the callee reads or writes it through that type's own API,
+* the framework **releases** it with Godot's per-type destructor
+  (`variant_get_ptr_destructor`), which is what drops the reference the
+  construction took.
+
+Nothing about the callee's shape changes: a pointer type occupies the same
+`*in` / `*out` slot a builtin does, and in a multi-argument signature it is read
+with `GDEX_ArgPtr`. Only the reading and writing differ, and for `String` two
+helpers cover it: `GDEX_StringText(*s)` (a two-call length-then-fill dance,
+because `string_to_utf8_chars` writes no terminator) and
+`GDEX_StringNew(*dest, text)`.
+
+```purebasic
+; (String) -> String
+Procedure GDBouncer_label(*self.GDBouncer, *in, *out)
+  GDEX_StringNew(*out, "bouncer:" + GDEX_StringText(*in))
+EndProcedure
+```
+
+**Verified:** `String` as an argument and a return, on both the one-argument and
+generic paths, plus `StringName` — enough to show the marshalling is per-type
+data rather than special-cased code. A 50 000-call round-trip moves static
+memory by −384 bytes, so the references are genuinely released rather than
+merely looking right.
+
+**Not yet exercised:** `NodePath`, `Object`, `Array`, `Dictionary`, `Callable`,
+`Signal` and the `Packed*Array` family go through the same path, but nothing
+has driven them yet. `Object` additionally needs a reference-count decision for
+`RefCounted`-derived returns, and reporting an `Object` argument to Godot also
+means naming its class in the `PropertyInfo`, which is not wired up.
 
 ### One caveat: `real_t`
 
@@ -412,8 +441,6 @@ every `real_t`-based type doubles: `Vector2` becomes 16, `Vector3` 24,
 `Transform3D` 96, and these structures would have to change to `.d`. This is
 the same build-time choice godot-cpp makes. Integer types (`Vector2i`,
 `Vector3i`, `Rect2i`) and `RID` are unaffected.
-
-### A note on the per-class tables
 
 ### Caps per class
 
@@ -1011,9 +1038,13 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       shape, and anything beyond that goes through a generic shape that carries
       the declared types instead of the signature, so arity is unlimited. See
       [More than one argument](#more-than-one-argument).
-- [ ] **Pointer-typed values** — `String`, `StringName`, `Object`, `Array`,
-      `Dictionary` — are rejected by `bind_method`, `ADD_PROPERTY` and
-      `ADD_SIGNAL`. Only value types cross the boundary.
+- [x] **Pointer-typed values now cross the boundary** — `bind_method` accepts
+      them, and the framework constructs and releases them with Godot's own
+      per-type constructor and destructor. `String` and `StringName` are
+      verified end to end; `NodePath`, `Object`, `Array`, `Dictionary`,
+      `Callable`, `Signal` and the `Packed*Array` family share the path but are
+      untested, and `Object` still needs a `RefCounted` decision for returns.
+      See [What is not covered](#what-is-not-covered).
 - [ ] **Builtin and utility methods.** A `Vector2` crosses as data, but
       `Vector2.length()` and `@GlobalScope` functions cannot be called.
 - [ ] **One virtual.** `_process` is wired; no other engine virtual is.

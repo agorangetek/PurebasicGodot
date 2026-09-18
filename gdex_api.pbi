@@ -79,6 +79,7 @@ Global g_from_int.GDExtensionVariantFromTypeConstructorFunc
 Global g_to_int.GDExtensionTypeFromVariantConstructorFunc
 
 Global g_string_name_new.GDExtensionInterfaceStringNameNewWithUtf8Chars
+Global g_variant_get_ptr_destructor.GDExtensionInterfaceVariantGetPtrDestructor
 Global g_string_new.GDExtensionInterfaceStringNewWithUtf8Chars
 Global g_string_to_utf8.GDExtensionInterfaceStringToUtf8Chars
 
@@ -184,6 +185,39 @@ Procedure GDEX_ReportUnresolved(class_name.s, method_name.s)
             "       or this engine build has no such method - pb_gdext_wizard --check tells them apart.")
 EndProcedure
 
+; ---- Godot String, from PureBasic text and back ---------------------------
+;
+; A native String is 8 bytes of handle onto Godot's own storage, so it cannot be
+; read or written with PeekS/PokeS the way a plain builtin can. Building one is
+; one call; reading one is a two-call dance, because string_to_utf8_chars
+; reports the byte length without a terminator first and then fills a buffer of
+; your choosing.
+
+Procedure GDEX_StringNew(*dest, text.s)
+  If *dest And g_string_new
+    g_string_new(*dest, UTF8(text))
+  EndIf
+EndProcedure
+
+Procedure.s GDEX_StringText(*src)
+  If Not *src Or Not g_string_to_utf8
+    ProcedureReturn ""
+  EndIf
+  Protected n.q = g_string_to_utf8(*src, 0, 0)
+  If n <= 0
+    ProcedureReturn ""
+  EndIf
+  Protected *buf = AllocateMemory(n + 1)
+  If Not *buf
+    ProcedureReturn ""
+  EndIf
+  g_string_to_utf8(*src, *buf, n)
+  PokeB(*buf + n, 0)
+  Protected out.s = PeekS(*buf, -1, #PB_UTF8)
+  FreeMemory(*buf)
+  ProcedureReturn out
+EndProcedure
+
 ; Godot interns StringNames, so the same text always shares its data pointer.
 ; That is what makes this comparison valid - Godot exposes no
 ; string_name_operator_equal to GDExtensions.
@@ -237,6 +271,7 @@ Procedure load_api(*p_get_proc_address)
   RESOLVE(g_get_operator_evaluator,         "variant_get_ptr_operator_evaluator")
 
   RESOLVE(g_string_name_new,                "string_name_new_with_utf8_chars")
+  RESOLVE(g_variant_get_ptr_destructor,     "variant_get_ptr_destructor")
   RESOLVE(g_string_new,                     "string_new_with_utf8_chars")
   RESOLVE(g_string_to_utf8,                 "string_to_utf8_chars")
 

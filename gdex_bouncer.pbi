@@ -219,6 +219,34 @@ Procedure GDBouncer_grow_by(*self.GDBouncer, *args, *out.GDRect2)
   *out\size\y = *v\y * f
 EndProcedure
 
+; ---- Godot String across the boundary -------------------------------------
+;
+; A String is 8 bytes of handle onto storage Godot owns, so it is read and
+; written with the two helpers rather than with PeekS/PokeS. Nothing else about
+; it is special: the framework constructs the native value from the Variant,
+; hands the callee a pointer to it, and releases it afterwards - which is what
+; releases the reference the conversion took.
+
+; (String) -> String
+Procedure GDBouncer_label(*self.GDBouncer, *in, *out)
+  GDEX_StringNew(*out, "bouncer:" + GDEX_StringText(*in))
+EndProcedure
+
+; (String, float) -> String   - a pointer type in a multi-argument signature,
+; which is a signature no typed shape covers, so it takes the generic one.
+Procedure GDBouncer_tag(*self.GDBouncer, *args, *out)
+  Protected *name = GDEX_ArgPtr(*args, 0)
+  Protected w.d = GDEX_ArgD(*args, 1)
+  GDEX_StringNew(*out, GDEX_StringText(*name) + "/" + StrD(w, 2))
+EndProcedure
+
+; (String) -> StringName   - a second pointer type through the same path, to
+; show the marshalling is not String-specific: the framework constructs from the
+; Variant, and releases with that type's own destructor.
+Procedure GDBouncer_sn(*self.GDBouncer, *in, *out)
+  g_string_name_new(*out, UTF8(GDEX_StringText(*in)))
+EndProcedure
+
 Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("get_amplitude"), @GDBouncer_get_amplitude(), #FLOAT)
   ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDBouncer_set_amplitude(), #VOID, #FLOAT)
@@ -249,6 +277,12 @@ Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("blend", "a", "b", "t"), @GDBouncer_blend(), #FLOAT, #FLOAT, #FLOAT, #FLOAT)
   ClassDB::bind_method(D_METHOD("grow_by", "size", "factor"), @GDBouncer_grow_by(), #RECT2, #VECTOR2, #FLOAT)
   ClassDB::bind_method(D_METHOD("steps", "a", "b"), @GDBouncer_steps(), #INT, #INT, #INT)
+
+  ; Pointer-typed values. Before this they were rejected by bind_method with
+  ; "argument type is not a value type".
+  ClassDB::bind_method(D_METHOD("label", "name"), @GDBouncer_label(), #STRING, #STRING)
+  ClassDB::bind_method(D_METHOD("tag", "name", "weight"), @GDBouncer_tag(), #STRING, #STRING, #FLOAT)
+  ClassDB::bind_method(D_METHOD("sn", "text"), @GDBouncer_sn(), #STRINGNAME, #STRING)
 
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")
