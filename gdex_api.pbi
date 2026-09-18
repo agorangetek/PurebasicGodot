@@ -144,6 +144,46 @@ Procedure GDEX_Trace(msg.s)
   EndIf
 EndProcedure
 
+; ===========================================================================
+; UNRESOLVED-BIND REPORTING
+;
+; A generated wrapper cannot resolve its own engine bind - Register_<Class>_Binds()
+; does that, from main code - so a wrapper whose bind was never resolved used to
+; return silently: a call that did nothing and said nothing. This is what it
+; calls instead when that happens.
+;
+; It lives here, in gdex_api.pbi, for a reason: the generated class files are
+; included AFTER this file, and each of them takes this procedure's address at
+; top level, which is the only place that runs without anyone having to call
+; anything. That is what makes the report survive the very mistake it reports -
+; forgetting Register_<Class>_Binds() means the injection inside it never ran.
+;
+; Reported once per class::method, because a wrapper can sit in _process and
+; would otherwise print a line every frame.
+; ===========================================================================
+
+#GDEX_MAX_REPORTS = 64
+
+Global gdex_report_count.l = 0
+Global Dim gdex_reported_key.s(#GDEX_MAX_REPORTS - 1)
+
+Procedure GDEX_ReportUnresolved(class_name.s, method_name.s)
+  Protected key.s = class_name + "::" + method_name
+  Protected i.l
+  For i = 0 To gdex_report_count - 1
+    If gdex_reported_key(i) = key
+      ProcedureReturn
+    EndIf
+  Next i
+  If gdex_report_count < #GDEX_MAX_REPORTS
+    gdex_reported_key(gdex_report_count) = key
+    gdex_report_count = gdex_report_count + 1
+  EndIf
+  GDEX_Fail("[gdex] " + key + ": no method bind was resolved, so this call did nothing." + Chr(10) +
+            "       Either Register_" + class_name + "_Binds() is missing from GDEX_ResolveBinds()," + Chr(10) +
+            "       or this engine build has no such method - pb_gdext_wizard --check tells them apart.")
+EndProcedure
+
 ; Godot interns StringNames, so the same text always shares its data pointer.
 ; That is what makes this comparison valid - Godot exposes no
 ; string_name_operator_equal to GDExtensions.

@@ -98,8 +98,21 @@ itself.
 `GDEX_ResolveBinds()` is separate because it genuinely has to wait: a scene
 class has no MethodBind before SCENE, and resolving one early returns null
 (Godot reports `Parameter "mb" is null`). It is the one part of the setup you
-still have to get right — a wrapper whose bind was never resolved checks it,
-finds null, and silently does nothing.
+still have to get right — and forgetting a class there no longer passes in
+silence. Every generated wrapper checks its own bind, and when one is missing it
+names itself and the remedy, once per method rather than once per call:
+
+```
+ERROR: [gdex] Node2D::set_position: no method bind was resolved, so this call did nothing.
+       Either Register_Node2D_Binds() is missing from GDEX_ResolveBinds(),
+       or this engine build has no such method - pb_gdext_wizard --check tells them apart.
+```
+
+The distinction the message draws matters: a *missing bind* is a setup mistake
+and is reported, while a *null instance* is an ordinary runtime condition and
+stays quiet. The report survives the mistake it describes because each generated
+file takes the reporter's address at top level, where it runs whether or not
+`Register_<Class>_Binds()` was ever called.
 
 Both hooks must exist even if they are empty; `selftest/selftest.pb` has two
 empty ones you can copy.
@@ -976,7 +989,15 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
 - [ ] **Builtin and utility methods.** A `Vector2` crosses as data, but
       `Vector2.length()` and `@GlobalScope` functions cannot be called.
 - [ ] **One virtual.** `_process` is wired; no other engine virtual is.
-- [ ] **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`,
-      and forgetting one fails silently at runtime rather than at compile time.
+- [x] **Forgetting a resolver is no longer silent.** A wrapper whose bind was
+      never resolved reports `class::method` and the remedy, once per method.
+      See [`GDEX_ResolveBinds()`](#getting-started-with-your-own-extension).
+- [ ] **`Register_*_Binds()` is still written by hand** in `GDEX_ResolveBinds()`.
+      Automating it is not reachable in PureBasic: no templates, no reflection
+      and no static initialisers, so a procedure cannot be discovered by name
+      and a class file cannot register itself. A generated project-wide resolver
+      would work but has to be kept in step with the entry point's includes,
+      which trades one silent failure for another. Until then the report above
+      is what makes the omission announce itself.
 - [ ] **Caps per class:** 8 signals with up to 4 arguments each, 64 methods, 32
       properties.

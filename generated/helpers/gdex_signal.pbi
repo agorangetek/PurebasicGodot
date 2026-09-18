@@ -22,7 +22,13 @@
 ; The instance's own signal.
 Procedure emit_signal(*self, Name.s, *v0 = 0, *v1 = 0, *v2 = 0, *v3 = 0)
   Protected *o.GDObject = *self
-  If Not Object::gdb_emit_signal Or Not *o Or Not *o\class_info Or Not *o\object
+  ; A missing bind is a setup mistake and says so; an invalid instance is an
+  ; ordinary runtime condition and stays quiet. Same split as the wrappers.
+  If Not Object::gdb_emit_signal
+    GDEX_ReportUnresolved("Object", "emit_signal")
+    ProcedureReturn
+  EndIf
+  If Not *o Or Not *o\class_info Or Not *o\object
     ProcedureReturn
   EndIf
   Protected *ci.GDClassInfo = *o\class_info

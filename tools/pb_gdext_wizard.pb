@@ -525,17 +525,32 @@ Procedure EmitWrapper(List Lines.s(), cls.s, *mi.MethodInfo)
   If structRet
     Add(Lines(), "    FillMemory(*out, " + Str(StructSize(*mi\retPb)) + ", 0)")
   EndIf
-  ; ptr_ptrcall is the module's own copy of the interface address, injected by
-  ; Register_<Class>_Binds(); PeekI(*self) is the Godot object pointer, because
-  ; GDObject\object is the first field of every instance.
-  Add(Lines(), "    If Not " + bind + " Or Not ptr_ptrcall Or Not *self Or Not PeekI(*self)")
+  ; ptr_ptrcall is the module's own copy of the interface address, and report_fn
+  ; the framework's unresolved-bind reporter; PeekI(*self) is the Godot object
+  ; pointer, because GDObject\object is the first field of every instance.
+  ;
+  ; The two conditions are kept apart on purpose. A null instance is an ordinary
+  ; runtime condition and stays silent. A missing bind is a SETUP mistake - the
+  ; class was included but Register_<Class>_Binds() was never called, so every
+  ; wrapper in this module is dead - and that is worth saying out loud, once.
+  Protected retLine.s
   If structRet Or *mi\retPb = ""
-    Add(Lines(), "      ProcedureReturn")
+    retLine = "      ProcedureReturn"
   ElseIf *mi\retPb = "d"
-    Add(Lines(), "      ProcedureReturn 0.0")
+    retLine = "      ProcedureReturn 0.0"
   Else
-    Add(Lines(), "      ProcedureReturn 0")
+    retLine = "      ProcedureReturn 0"
   EndIf
+
+  Add(Lines(), "    If Not " + bind + " Or Not ptr_ptrcall")
+  Add(Lines(), "      Protected rf.LocalReportFn = report_fn")
+  Add(Lines(), "      If rf")
+  Add(Lines(), "        rf(" + Chr(34) + cls + Chr(34) + ", " + Chr(34) + *mi\name + Chr(34) + ")")
+  Add(Lines(), "      EndIf")
+  Add(Lines(), retLine)
+  Add(Lines(), "    EndIf")
+  Add(Lines(), "    If Not *self Or Not PeekI(*self)")
+  Add(Lines(), retLine)
   Add(Lines(), "    EndIf")
   Add(Lines(), "    Protected pc.LocalPtrcallFn = ptr_ptrcall")
 
@@ -633,7 +648,9 @@ Procedure EmitClass(List Lines.s(), cls.s, List ancestors.s())
   ; before the Register procedure that assigns into it.
   Add(Lines(), "DeclareModule " + prefix)
   Add(Lines(), "  Prototype LocalPtrcallFn(*mb, *inst, *args, *ret)")
+  Add(Lines(), "  Prototype LocalReportFn(class_name.s, method_name.s)")
   Add(Lines(), "  Global ptr_ptrcall.i")
+  Add(Lines(), "  Global report_fn.i")
   For i = 0 To n - 1
     Add(Lines(), "  Global gdb_" + Ident(mis(i)\name) + ".i")
   Next
@@ -662,6 +679,14 @@ Procedure EmitClass(List Lines.s(), cls.s, List ancestors.s())
   For i = 0 To n - 1
     Add(Lines(), "Global gdsn_" + prefix + "_" + Ident(mis(i)\name) + ".GodotStringName")
   Next
+  Add(Lines(), "")
+
+  ; Injected at TOP LEVEL, deliberately not inside Register_<Class>_Binds(). This
+  ; statement runs no matter what the extension does, which is the point: when
+  ; the resolver was never called, the injection inside it never ran either, and
+  ; the wrappers would have no way left to report it. A module's globals are
+  ; writable from main scope with ::, so one line per class is enough.
+  Add(Lines(), prefix + "::report_fn = @GDEX_ReportUnresolved()")
   Add(Lines(), "")
 
   Add(Lines(), "Procedure Register_" + prefix + "_Binds()")
