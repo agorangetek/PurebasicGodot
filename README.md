@@ -28,7 +28,7 @@ tools/check-all.sh            # the whole regression: static checks, build,
 
 ```purebasic
 Structure Spinner
-  GDBase.GDObject      ; must be first: how a callback finds the class
+  GDBase.GDObject      ; must be first: this is how callbacks find the class
   speed.d
   angle.d
 EndStructure
