@@ -34,6 +34,9 @@ Prototype GDEXDtor(*self)
 Prototype GDEXBind()
 Prototype GDEXProcess(*self, delta.d)
 Prototype GDEXNotify(*self, what.l)
+; A vararg method's callee: the instance, Godot's array of Variant pointers, the
+; return slot (as in the generic shape), and how many arguments were passed.
+Prototype GDEXVararg(*self, *args, *out, argc.i)
 
 Prototype GDEXVoid0(*self)
 Prototype GDEXVoid1F(*self, v.d)
@@ -492,7 +495,7 @@ Procedure.l GDEX_MethodArgType(*m.GDMethodEntry, index.l)
       If index = 0
         ProcedureReturn *m\arg_type[0]
       EndIf
-    Case #GDEX_SHAPE_ARGS
+    Case #GDEX_SHAPE_ARGS, #GDEX_SHAPE_VARARG
       ProcedureReturn *m\arg_type[index]
     Case #GDEX_SHAPE_2FF_VOID To #GDEX_SHAPE_2II_I
       ; kind 0 is float, 1 is int; arg0 is the middle bit, arg1 the low one.
@@ -515,7 +518,7 @@ Procedure.l GDEX_MethodRetType(*m.GDMethodEntry)
   Select *m\shape
     Case #GDEX_SHAPE_F64_0 : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_FLOAT
     Case #GDEX_SHAPE_I64_0 : ProcedureReturn #GDEXTENSION_VARIANT_TYPE_INT
-    Case #GDEX_SHAPE_BUILTIN_RET, #GDEX_SHAPE_BUILTIN_ARG_RET, #GDEX_SHAPE_ARGS : ProcedureReturn *m\ret_type
+    Case #GDEX_SHAPE_BUILTIN_RET, #GDEX_SHAPE_BUILTIN_ARG_RET, #GDEX_SHAPE_ARGS, #GDEX_SHAPE_VARARG : ProcedureReturn *m\ret_type
     Case #GDEX_SHAPE_2FF_VOID To #GDEX_SHAPE_2II_I
       Protected kr.l = (*m\shape - #GDEX_SHAPE_2FF_VOID) >> 2
       If kr = 1
@@ -741,6 +744,54 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
           EndIf
         Next ai
       EndIf
+    Case #GDEX_SHAPE_VARARG
+      ; Godot has already marshalled the arguments into a Variant array and
+      ; counted them, so the callee only has to loop. r_error is ours to fill:
+      ; it starts OK, and a handler that rejects its arguments will have said so
+      ; through GDEX_VarargFail before returning.
+      If *r_error
+        Protected *ce.GDExtensionCallError = *r_error
+        *ce\error = #GDEXTENSION_CALL_OK
+        *ce\argument = 0
+        *ce\expected = 0
+      EndIf
+      gdex_vararg_err = #GDEXTENSION_CALL_OK
+      gdex_vararg_arg = 0
+      gdex_vararg_expect = 0
+      Protected *vob = 0
+      If *m\ret_size > 0
+        *vob = AllocateMemory(*m\ret_size)
+        If *vob
+          FillMemory(*vob, *m\ret_size, 0)
+        EndIf
+      EndIf
+      Protected vf.GDEXVararg = *m\func
+      vf(*instance, *args, *vob, arg_count)
+      If gdex_vararg_err <> #GDEXTENSION_CALL_OK
+        If *r_error
+          Protected *ce2.GDExtensionCallError = *r_error
+          *ce2\error = gdex_vararg_err
+          *ce2\argument = gdex_vararg_arg
+          *ce2\expected = gdex_vararg_expect
+        EndIf
+        ; Say it out loud as well. Godot takes r_error back, but a GDScript
+        ; caller that ignores the result turns a rejected call into a silent
+        ; nothing - the same silent-failure shape the rest of this framework
+        ; reports rather than allows. There is no StringName-to-text helper
+        ; here, so the method is identified by its error rather than its name.
+        Protected vmsg.s = "[gdex] variadic call rejected by its handler: error "
+        vmsg + Str(gdex_vararg_err)
+        vmsg + ", argument " + Str(gdex_vararg_arg)
+        vmsg + ", expected " + Str(gdex_vararg_expect)
+        GDEX_Fail(vmsg)
+      EndIf
+      If *vob
+        GDEX_WrapVariant(*r_ret, *m\ret_type, *vob)
+        GDEX_FreeValue(*m\ret_type, *vob)
+        FreeMemory(*vob)
+      Else
+        g_variant_new_nil(*r_ret)
+      EndIf
   EndSelect
 EndProcedure
 
@@ -888,6 +939,34 @@ Procedure.l GDEX_ScalarRetKind(vtype.l)
   ProcedureReturn -1
 EndProcedure
 
+; ===========================================================================
+; A VARARG METHOD
+;
+; Godot marshals every argument of a variadic method into a Variant array and
+; passes the count alongside it, so the callee is an ordinary procedure with a
+; fixed signature - a loop from 0 to argc-1. PureBasic needs no variadic
+; procedure to receive one, which is why this is pure PureBasic and not an
+; inline-C or inline-assembly exercise.
+;
+; It is the CALLING side that PureBasic cannot express, and that is a different
+; problem: nothing here needs it.
+;
+; Error reporting is deferred rather than passed in, so that a handler's
+; signature stays four parameters. A handler that rejects its arguments calls
+; GDEX_VarargFail; the dispatcher writes the result into Godot's r_error after
+; the call returns.
+; ===========================================================================
+
+Global gdex_vararg_err.l = #GDEXTENSION_CALL_OK
+Global gdex_vararg_arg.l = 0
+Global gdex_vararg_expect.l = 0
+
+Procedure GDEX_VarargFail(code.l, argument.l = 0, expected.l = 0)
+  gdex_vararg_err = code
+  gdex_vararg_arg = argument
+  gdex_vararg_expect = expected
+EndProcedure
+
 Procedure GDEX_AddMethodEntry(method_name.s, func.i, shape.l, arg_meta.l)
   Protected *ci.GDClassInfo = gdex_current
   If Not *ci
@@ -1019,6 +1098,12 @@ Procedure GDEX_RegisterMethod(*ci.GDClassInfo, i.l)
   info\call_func = @GDEX_MethodCall()
   info\ptrcall_func = @GDEX_MethodPtrCall()
   info\method_flags = #GDEXTENSION_METHOD_FLAG_NORMAL
+  ; Godot only routes the call through call_func - with a Variant array and a
+  ; count - when the method is flagged variadic. Without the flag it would build
+  ; a typed ptrcall this shape cannot receive.
+  If *m\shape = #GDEX_SHAPE_VARARG
+    info\method_flags = #GDEXTENSION_METHOD_FLAG_NORMAL | #GDEXTENSION_METHOD_FLAG_VARARG
+  EndIf
   info\has_return_value = #False
   info\return_value_info = #Null
   info\return_value_metadata = #GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
@@ -1488,6 +1573,27 @@ Procedure GDEX_BindMethodImpl(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l,
 EndProcedure
 
 ; ClassDB::add_property - the accessors are named and must already be bound.
+; ClassDB::bind_vararg - a method Godot treats as variadic.
+;
+; Only the return type is declared: the arguments are Variants by definition, so
+; there is nothing to type, and Godot's argument metadata would describe a fixed
+; part this binding does not have.
+Procedure GDEX_BindVarargImpl(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l)
+  Protected *ci.GDClassInfo = gdex_current
+  If Not *ci
+    ProcedureReturn
+  EndIf
+  If Not Proc
+    GDEX_Fail("[gdex] bind_vararg " + Name + ": no procedure given")
+    ProcedureReturn
+  EndIf
+  If RetType <> #VOID And GDEX_VariantTypeSize(RetType) = 0
+    GDEX_Fail("[gdex] bind_vararg " + Name + ": return type is not a value type")
+    ProcedureReturn
+  EndIf
+  GDEX_AddMethodFull(Name, Proc, #GDEX_SHAPE_VARARG, 0, #GDEX_NO_TYPE, #GDEX_NO_TYPE, #GDEX_NO_TYPE, #GDEX_NO_TYPE, RetType)
+EndProcedure
+
 Procedure GDEX_AddPropertyImpl(PropType.l, PropName.s, SetterName.s, GetterName.s)
   If PropType <> #VOID And GDEX_VariantTypeSize(PropType) = 0
     GDEX_Fail("[gdex] ADD_PROPERTY " + PropName + ": not a value type")

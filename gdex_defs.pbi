@@ -176,6 +176,19 @@ IncludeFile "gdex_types.pbi"
 #GDEX_SHAPE_2IF_I = 20
 #GDEX_SHAPE_2II_I = 21
 
+; A method Godot treats as variadic: the callee is handed a Variant array and a
+; count instead of a fixed signature, which is the one shape PureBasic CAN
+; receive - it needs no variadic procedure, just a loop.
+#GDEX_SHAPE_VARARG = 22
+
+; GDExtensionCallError::error, from Godot's header.
+#GDEXTENSION_CALL_OK                       = 0
+#GDEXTENSION_CALL_ERROR_INVALID_METHOD     = 1
+#GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT   = 2
+#GDEXTENSION_CALL_ERROR_TOO_MANY_ARGUMENTS = 3
+#GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS  = 4
+#GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL   = 5
+
 #GDEX_MAX_PROPS       = 64
 #GDEX_MAX_METHODS     = 128
 #GDEX_MAX_CLASSES     = 8

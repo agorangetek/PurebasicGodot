@@ -38,13 +38,16 @@ DeclareModule ClassDB
   Global bind_method_fn.i
   Global add_property_fn.i
   Global add_signal_fn.i
+  Global bind_vararg_fn.i
 
   Prototype BindMethodFn(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l, Arg0.l, Arg1.l, Arg2.l, Arg3.l)
   Prototype AddPropertyFn(PropType.l, PropName.s, SetterName.s, GetterName.s)
   Prototype AddSignalFn(SigName.s, T0.l, N0.s, T1.l, N1.s, T2.l, N2.s, T3.l, N3.s)
+  Prototype BindVarargFn(Name.s, A1.s, A2.s, A3.s, A4.s, Proc.i, RetType.l)
 
   Declare bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1, Arg2.l = -1, Arg3.l = -1)
   Declare add_property(PropType.l, PropName.s, SetterName.s, GetterName.s)
+  Declare bind_vararg(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0)
   Declare add_signal(SigName.s, T0.l = 0, N0.s = "", T1.l = 0, N1.s = "", T2.l = 0, N2.s = "", T3.l = 0, N3.s = "")
 EndDeclareModule
 
@@ -55,6 +58,12 @@ Module ClassDB
   Procedure bind_method(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0, Arg0.l = -1, Arg1.l = -1, Arg2.l = -1, Arg3.l = -1)
     Protected f.BindMethodFn = bind_method_fn
     f(Name, A1, A2, A3, A4, Proc, RetType, Arg0, Arg1, Arg2, Arg3)
+  EndProcedure
+
+  ; ClassDB::bind_vararg(D_METHOD("sum"), @GDExample_sum(), #FLOAT)
+  Procedure bind_vararg(Name.s, A1.s = "", A2.s = "", A3.s = "", A4.s = "", Proc.i = 0, RetType.l = 0)
+    Protected f.BindVarargFn = bind_vararg_fn
+    f(Name, A1, A2, A3, A4, Proc, RetType)
   EndProcedure
 
   ; ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
@@ -77,3 +86,4 @@ EndModule
 ClassDB::bind_method_fn  = @GDEX_BindMethodImpl()
 ClassDB::add_property_fn = @GDEX_AddPropertyImpl()
 ClassDB::add_signal_fn   = @GDEX_AddSignalImpl()
+ClassDB::bind_vararg_fn  = @GDEX_BindVarargImpl()

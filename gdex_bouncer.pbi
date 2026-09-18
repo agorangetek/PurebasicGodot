@@ -320,6 +320,35 @@ Procedure.i GDBouncer_get_physics_hits(*self.GDBouncer)
   ProcedureReturn *self\physics_hits
 EndProcedure
 
+; ---- variadic methods ------------------------------------------------------
+;
+; Godot marshals every argument into a Variant array and passes the count, so
+; the callee is an ordinary PureBasic procedure that loops. PureBasic has no
+; variadic procedure and needs none: the variadic-ness lives on Godot's side of
+; the boundary, which is exactly where a typed signature becomes impossible and
+; a counted array becomes the right shape.
+
+; (Variant...) -> float
+Procedure GDBouncer_sum(*self.GDBouncer, *args, *out, argc.i)
+  Protected k, total.d
+  For k = 0 To argc - 1
+    total + GDEX_ArgDouble(*args, k)
+  Next k
+  PokeD(*out, total)
+EndProcedure
+
+; (Variant...) -> float, but only from two arguments up. A short call is a
+; caller error, so it is reported through Godot's r_error rather than answered
+; with a wrong number.
+Procedure GDBouncer_span_of(*self.GDBouncer, *args, *out, argc.i)
+  If argc < 2
+    GDEX_VarargFail(#GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS, 0, 2)
+    PokeD(*out, 0.0)
+    ProcedureReturn
+  EndIf
+  PokeD(*out, GDEX_ArgDouble(*args, 1) - GDEX_ArgDouble(*args, 0))
+EndProcedure
+
 Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("get_amplitude"), @GDBouncer_get_amplitude(), #FLOAT)
   ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDBouncer_set_amplitude(), #VOID, #FLOAT)
@@ -366,6 +395,11 @@ Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("enter_hits"), @GDBouncer_get_enter_hits(), #INT)
   ClassDB::bind_method(D_METHOD("ready_hits"), @GDBouncer_get_ready_hits(), #INT)
   ClassDB::bind_method(D_METHOD("physics_hits"), @GDBouncer_get_physics_hits(), #INT)
+
+  ; Variadic: the flag makes Godot route the call through call_func with a
+  ; Variant array and a count, which is the only shape that can receive it.
+  ClassDB::bind_vararg(D_METHOD("sum"), @GDBouncer_sum(), #FLOAT)
+  ClassDB::bind_vararg(D_METHOD("span_of"), @GDBouncer_span_of(), #FLOAT)
 
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")

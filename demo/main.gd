@@ -127,6 +127,17 @@ func _ready() -> void:
 		"   ready = ", b.ready_hits(),
 		"   physics frames = ", b.physics_hits())
 
+	# --- variadic methods --------------------------------------------------
+	# Godot marshals the arguments into a Variant array and passes the count,
+	# so nothing variadic has to exist on the PureBasic side.
+	print("--- variadic methods ---")
+	print("  sum()                    = ", b.sum())
+	print("  sum(1, 2, 3)             = ", b.sum(1, 2, 3))
+	print("  sum(1.5, 2.5, 3.0, 4.0)  = ", b.sum(1.5, 2.5, 3.0, 4.0))
+	print("  span_of(2.0, 5.5)        = ", b.span_of(2.0, 5.5))
+	var bad = b.span_of(2.0)          # r_error: TOO_FEW_ARGUMENTS
+	print("  span_of(2.0)             = ", bad, "   (rejected through r_error; Godot logged it)")
+
 	print("--- builtin methods and @GlobalScope ---")
 	print("  Vector2(3,4).length()            = ", b.probe_length(Vector2(3.0, 4.0)))
 	print("  @GlobalScope.deg_to_rad(180.0)   = ", b.probe_deg_to_rad(180.0))
