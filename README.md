@@ -79,7 +79,7 @@ extension classes as global names, and that only happens during import.
 
 ## Writing a class
 
-```asm
+```blitzbasic
 Structure Spinner
   GDBase.GDObject          ; must be first
   speed.d
