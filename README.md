@@ -534,8 +534,11 @@ Fortuitously easy in one place and fiddly in four:
 * **Structures cross procedure boundaries only by pointer.** The generator
   itself hit this: `Procedure DescribeMethod(mi.MethodInfo)` is a syntax error,
   hence `*mi.MethodInfo` throughout.
-* **No line continuation.** A long expression has to be built up over several
-  statements.
+* **Line continuation works — this note used to say it did not.** A long
+  expression may be split after an operator, with or without an open
+  parenthesis; both were compiled to check rather than assumed. The emitters
+  here still build long expressions up over several statements, but that is
+  readability, not a language limit.
 * **No escape for a double quote inside a string literal.** `Chr(34)` is the
   only way to emit one — needed on four lines that write `GDEX_SNFrom(...,
   "Name")` and the `IncludeFile` directive.
