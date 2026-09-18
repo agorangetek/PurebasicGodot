@@ -539,8 +539,10 @@ Fortuitously easy in one place and fiddly in four:
   parenthesis; both were compiled to check rather than assumed. The emitters
   here still build long expressions up over several statements, but that is
   readability, not a language limit.
-* **No escape for a double quote inside a string literal.** `Chr(34)` is the
-  only way to emit one — needed on four lines that write `GDEX_SNFrom(...,
+* **No escape for a double quote inside a string literal** - but it is not
+  `Chr(34)` or nothing, which this note used to claim. `\"` does not compile
+  (verified), and `#DQUOTE$` does: it prints `a"b` and is a constant rather than
+  a call. `Chr(34)` is what the emitters use — needed on four lines that write `GDEX_SNFrom(...,
   "Name")` and the `IncludeFile` directive.
 * **Fixed-size arrays in a structure are indexed with `[ ]`**, while `Dim`'d
   arrays use `( )`. Mixing them is a syntax error.
