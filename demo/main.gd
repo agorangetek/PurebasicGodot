@@ -119,6 +119,14 @@ func _ready() -> void:
 	# --- reaching Godot outside ClassDB ------------------------------------
 	# A builtin type's methods and the @GlobalScope functions are handed out by
 	# type plus hash, not through ClassDB, so they need no bind registration.
+	# --- engine notifications ---------------------------------------------
+	# _ready, _enter_tree, _physics_process and the rest arrive as
+	# notifications, so they need no virtual-call plumbing of their own.
+	print("--- engine notifications ---")
+	print("  enter_tree - exit_tree = ", b.enter_hits(),
+		"   ready = ", b.ready_hits(),
+		"   physics frames = ", b.physics_hits())
+
 	print("--- builtin methods and @GlobalScope ---")
 	print("  Vector2(3,4).length()            = ", b.probe_length(Vector2(3.0, 4.0)))
 	print("  @GlobalScope.deg_to_rad(180.0)   = ", b.probe_deg_to_rad(180.0))

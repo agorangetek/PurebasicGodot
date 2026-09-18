@@ -17,6 +17,10 @@ Structure GDBouncer
   phase.d
   direction.d
   tint.GDColor
+  ; Counters the notification handler below fills in.
+  enter_hits.l
+  ready_hits.l
+  physics_hits.l
 EndStructure
 
 Procedure GDBouncer_constructor(*self.GDBouncer)
@@ -280,6 +284,42 @@ Procedure GDBouncer_probe_normalized(*self.GDBouncer, *v.GDVector2, *out.GDVecto
   Vector2::_normalized(*v, *out)
 EndProcedure
 
+; ---- engine notifications, which is where most engine virtuals arrive ------
+;
+; Godot delivers _ready, _enter_tree, _exit_tree, _physics_process, _draw and
+; the rest as NOTIFICATIONS, so one handler of this shape covers all of them.
+; _process is the exception: it is the only virtual Godot asks about through
+; virtual call data, and the only one handed a delta - hence the separate
+; `process` field, which this handler does not replace.
+Procedure GDBouncer_notify(*self.GDBouncer, what.l)
+  Select what
+    Case #NOTIFICATION_ENTER_TREE
+      *self\enter_hits + 1
+      ; Physics notifications are only delivered to a node that asked for them.
+      GDEX_EnablePhysics(PeekI(*self))
+    Case #NOTIFICATION_READY
+      *self\ready_hits + 1
+    Case #NOTIFICATION_PHYSICS_PROCESS
+      *self\physics_hits + 1
+    Case #NOTIFICATION_EXIT_TREE
+      *self\enter_hits - 1
+  EndSelect
+EndProcedure
+
+; Bound #INT, so declared .i: the shape is what decides, and a value-returning
+; procedure with the wrong suffix is the silent-kind of mistake.
+Procedure.i GDBouncer_get_enter_hits(*self.GDBouncer)
+  ProcedureReturn *self\enter_hits
+EndProcedure
+
+Procedure.i GDBouncer_get_ready_hits(*self.GDBouncer)
+  ProcedureReturn *self\ready_hits
+EndProcedure
+
+Procedure.i GDBouncer_get_physics_hits(*self.GDBouncer)
+  ProcedureReturn *self\physics_hits
+EndProcedure
+
 Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("get_amplitude"), @GDBouncer_get_amplitude(), #FLOAT)
   ClassDB::bind_method(D_METHOD("set_amplitude", "amplitude"), @GDBouncer_set_amplitude(), #VOID, #FLOAT)
@@ -322,6 +362,11 @@ Procedure GDBouncer_bind()
   ClassDB::bind_method(D_METHOD("probe_deg_to_rad", "deg"), @GDBouncer_probe_deg_to_rad(), #FLOAT, #FLOAT)
   ClassDB::bind_method(D_METHOD("probe_normalized", "v"), @GDBouncer_probe_normalized(), #VECTOR2, #VECTOR2)
 
+  ; The notification counters, so GDScript can see what the engine delivered.
+  ClassDB::bind_method(D_METHOD("enter_hits"), @GDBouncer_get_enter_hits(), #INT)
+  ClassDB::bind_method(D_METHOD("ready_hits"), @GDBouncer_get_ready_hits(), #INT)
+  ClassDB::bind_method(D_METHOD("physics_hits"), @GDBouncer_get_physics_hits(), #INT)
+
   ADD_PROPERTY(PropertyInfo(#FLOAT, "amplitude"), "set_amplitude", "get_amplitude")
   ADD_PROPERTY(PropertyInfo(#FLOAT, "speed"), "set_speed", "get_speed")
   ADD_PROPERTY(PropertyInfo(#VECTOR2, "span"), "set_span", "get_span")
@@ -335,3 +380,4 @@ gdbouncer_class\constructor   = @GDBouncer_constructor()
 gdbouncer_class\destructor    = @GDBouncer_destructor()
 gdbouncer_class\process       = @GDBouncer_process()
 gdbouncer_class\bind_func     = @GDBouncer_bind()
+gdbouncer_class\notify        = @GDBouncer_notify()

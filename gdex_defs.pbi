@@ -112,8 +112,19 @@ IncludeFile "gdex_types.pbi"
 
 ; ---- Object / Node notifications -----------------------------------------
 #NOTIFICATION_POSTINITIALIZE = 0
-#NOTIFICATION_READY          = 13
-#NOTIFICATION_PROCESS        = 17
+; Node's own notifications. Values taken from Godot's API, not from memory.
+#NOTIFICATION_ENTER_TREE          = 10
+#NOTIFICATION_EXIT_TREE           = 11
+#NOTIFICATION_READY               = 13
+#NOTIFICATION_PHYSICS_PROCESS     = 16
+#NOTIFICATION_PROCESS             = 17
+#NOTIFICATION_PARENTED            = 18
+#NOTIFICATION_UNPARENTED          = 19
+; CanvasItem's.
+#NOTIFICATION_DRAW                = 30
+#NOTIFICATION_VISIBILITY_CHANGED  = 31
+#NOTIFICATION_ENTER_CANVAS        = 32
+#NOTIFICATION_EXIT_CANVAS         = 33
 
 ; ---- Method shapes the generic dispatcher understands --------------------
 #GDEX_SHAPE_VOID_0  = 0 ; Procedure(*self)
@@ -245,6 +256,12 @@ Structure GDClassInfo Align #PB_Structure_AlignC
   constructor.i
   destructor.i
   process.i
+  ; Optional. Godot delivers _ready, _enter_tree, _exit_tree, _physics_process,
+  ; _draw and everything else as NOTIFICATIONS, so one handler of this shape
+  ; covers every engine virtual that has one. `process` above is the exception:
+  ; it is the only virtual Godot asks about through virtual call data, and the
+  ; only one that is handed a delta.
+  notify.i
   bind_func.i
   ; Optional, and only needed if the class has PureBasic-managed members
   ; (List, Map, dynamic array). They must be a MATCHING pair:

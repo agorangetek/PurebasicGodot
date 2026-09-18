@@ -706,6 +706,40 @@ wrapper cannot see silently becomes a module-local. The wrapper then compiles
 cleanly and does nothing at all. It caught exactly that class of bug while this
 was being built.
 
+### Engine virtuals and notifications
+
+Godot delivers almost every engine virtual as a **notification** — `_ready`,
+`_enter_tree`, `_exit_tree`, `_physics_process`, `_draw` and the rest — so one
+optional handler covers all of them. A class supplies it in its descriptor:
+
+```purebasic
+Procedure GDExample_notify(*self.GDExample, what.l)
+  Select what
+    Case #NOTIFICATION_ENTER_TREE
+      *self\entered + 1
+    Case #NOTIFICATION_READY
+      *self\ready + 1
+    Case #NOTIFICATION_PHYSICS_PROCESS
+      *self\physics + 1
+  EndSelect
+EndProcedure
+
+gdexample_class\notify = @GDExample_notify()
+```
+
+`_process` is the exception and stays separate: it is the only virtual Godot
+asks about through virtual call data, and the only one handed a delta, which is
+what the `process` field is for. The two do not conflict — a class may have
+either, both, or neither.
+
+**Physics needs asking for.** Godot delivers `NOTIFICATION_PHYSICS_PROCESS` only
+to a node whose physics processing is *enabled*, and it is off by default —
+unlike a script, an extension class has no `_physics_process` for Godot to
+notice. Call `GDEX_EnablePhysics(PeekI(*self))` from `NOTIFICATION_ENTER_TREE`,
+where the object exists. (`GDEX_EnableProcessing` is the same thing for the
+notification-based `_process` path.) This is easy to get wrong quietly: the
+handler is correct and simply never runs.
+
 ### Calling a builtin type's method, or an `@GlobalScope` function
 
 Engine *classes* live in ClassDB, which is why they need `Register_<Class>_Binds()`
@@ -1096,7 +1130,12 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       current type set; the rest want `Variant`, `Callable` or a `Packed*Array`
       and get no wrapper until those are driven — the same rule as an engine
       class method.
-- [ ] **One virtual.** `_process` is wired; no other engine virtual is.
+- [x] **Engine virtuals.** `_process` is still the only one Godot asks about
+      through virtual call data, but every virtual that arrives as a
+      *notification* — `_ready`, `_enter_tree`, `_exit_tree`,
+      `_physics_process`, `_draw`, … — now reaches a per-class `notify` handler,
+      verified for the first four. See [Engine virtuals and
+      notifications](#engine-virtuals-and-notifications).
 - [x] **Forgetting a resolver is no longer silent.** A wrapper whose bind was
       never resolved reports `class::method` and the remedy, once per method.
       See [`GDEX_ResolveBinds()`](#getting-started-with-your-own-extension).

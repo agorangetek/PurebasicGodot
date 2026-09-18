@@ -33,6 +33,7 @@ Prototype GDEXCtor(*self)
 Prototype GDEXDtor(*self)
 Prototype GDEXBind()
 Prototype GDEXProcess(*self, delta.d)
+Prototype GDEXNotify(*self, what.l)
 
 Prototype GDEXVoid0(*self)
 Prototype GDEXVoid1F(*self, v.d)
@@ -102,11 +103,12 @@ Declare GDEX_FreeValue(vtype.l, *p)
 ;   `Parameter "mb" is null`. Resolving on first use puts each lookup after
 ;   the level that actually owns the class.
 ;
-; The hashes are literal so that tools/gen_binds --check verifies them on
+; The hashes are literal so that tools/pb_gdext_wizard --check verifies them on
 ; every build, exactly like the generated files.
 ; ===========================================================================
 
 Global gdex_node_set_process_bind.i = 0
+Global gdex_node_set_physics_bind.i = 0
 Global gdex_node_get_delta_bind.i = 0
 Global gdex_node_binds_done.l = #False
 Global gdex_engine_obj.i = 0
@@ -114,19 +116,25 @@ Global gdex_engine_register_bind.i = 0
 Global gdex_engine_unregister_bind.i = 0
 Global gdex_engine_binds_done.l = #False
 
-; Node.set_process / Node.get_process_delta_time. Used only by the
-; notification-based _process path, which runs at runtime, never at CORE.
+; Node.set_process / set_physics_process / get_process_delta_time. Used only by
+; the notification-based _process path and by GDEX_EnablePhysics, which run at
+; runtime, never at CORE.
+;
+; set_process and set_physics_process share a hash because both are (bool) -> void.
 Procedure GDEX_EnsureNodeBinds()
   If gdex_node_binds_done Or Not g_classdb_get_method_bind
     ProcedureReturn
   EndIf
   Protected nodeSn.GodotStringName
   Protected setSn.GodotStringName
+  Protected physSn.GodotStringName
   Protected deltaSn.GodotStringName
   GDEX_SNFrom(nodeSn, "Node")
   GDEX_SNFrom(setSn, "set_process")
+  GDEX_SNFrom(physSn, "set_physics_process")
   GDEX_SNFrom(deltaSn, "get_process_delta_time")
   gdex_node_set_process_bind = _pGetMethodBind(@nodeSn, @setSn, 2586408642)
+  gdex_node_set_physics_bind = _pGetMethodBind(@nodeSn, @physSn, 2586408642)
   gdex_node_get_delta_bind = _pGetMethodBind(@nodeSn, @deltaSn, 1740695150)
   gdex_node_binds_done = #True
 EndProcedure
@@ -147,6 +155,27 @@ Procedure GDEX_EnsureEngineBinds()
   gdex_engine_register_bind = _pGetMethodBind(@engineSn, @regSn, 965313290)
   gdex_engine_unregister_bind = _pGetMethodBind(@engineSn, @unregSn, 3304788590)
   gdex_engine_binds_done = #True
+EndProcedure
+
+; Node.set_physics_process(true).
+;
+; Godot delivers NOTIFICATION_PHYSICS_PROCESS only to a node whose physics
+; processing is ENABLED, and it is off by default - unlike a script, an
+; extension class has no _physics_process for Godot to notice. So a class that
+; wants that notification in its notify handler asks for it, from
+; NOTIFICATION_ENTER_TREE where the object exists:
+;
+;     Case #NOTIFICATION_ENTER_TREE
+;       GDEX_EnablePhysics(PeekI(*self))   ; *self's first field is the Object*
+Procedure GDEX_EnablePhysics(*object)
+  GDEX_EnsureNodeBinds()
+  If Not gdex_node_set_physics_bind Or Not *object
+    ProcedureReturn
+  EndIf
+  Protected on.l = #True
+  Protected Dim ap.i(0)
+  ap(0) = @on
+  g_object_method_bind_ptrcall(gdex_node_set_physics_bind, *object, @ap(0), #Null)
 EndProcedure
 
 ; Node.set_process(true) - only used when gdex_process_via_notification is on.
@@ -394,8 +423,15 @@ ProcedureC GDEX_Notification(*instance, what.l, reversed.a)
   If Not *o\class_info
     ProcedureReturn
   EndIf
+  Protected *ci.GDClassInfo = *o\class_info
+  ; Every notification Godot delivers, so one optional handler covers the
+  ; engine virtuals that arrive this way: _ready, _enter_tree, _exit_tree,
+  ; _physics_process, _draw, and so on.
+  If *ci\notify
+    Protected n.GDEXNotify = *ci\notify
+    n(*instance, what)
+  EndIf
   If what = #NOTIFICATION_PROCESS And gdex_process_via_notification
-    Protected *ci.GDClassInfo = *o\class_info
     If *ci\process
       Protected p.GDEXProcess = *ci\process
       p(*instance, GDEX_ProcessDelta(*o\object))
