@@ -35,6 +35,7 @@ EndStructure
 
 Procedure Spinner_constructor(*self.Spinner)
   *self\speed = 1.0
+  *self\angle = 0.0
 EndProcedure
 
 Procedure Spinner_destructor(*self.Spinner)
@@ -70,6 +71,10 @@ spinner_class\bind_func     = @Spinner_bind()
 `bind_method` states the signature because a PureBasic procedure pointer carries
 none: the trailing constants are `(return, arg0, arg1, ...)`. Include only the
 engine classes you call into — `generated/Node2D.pbi` gives you `Node2D::rotate`.
+
+This is `skeleton/spinner.pbi` with its longer comments trimmed. The code is the
+same, but `skeleton/` is the copy that compiles, so take the file rather than
+retyping from here.
 
 ## A whole extension
 
