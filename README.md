@@ -1189,6 +1189,12 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       would work but has to be kept in step with the entry point's includes,
       which trades one silent failure for another. Until then the report above
       is what makes the omission announce itself.
+- [ ] **Vararg rejection is not yet verified.** `bind_vararg` works and the
+      callee receives the right `argc`, but a handler that rejects its arguments
+      through `GDEX_VarargFail` has not been observed to reach Godot's
+      `r_error`, nor to produce the framework's own log line. The handler
+      demonstrably runs - a probe showed `argc=1` arriving - so the gap is in
+      what happens to the error afterwards.
 - [x] **Caps per class:** now 16 signals, 128 methods, 64 properties, with the
       cost and the reasoning written down under [Caps per
       class](#caps-per-class). `#GDEX_MAX_SIGNAL_ARGS` stays at 4: it is a shape
