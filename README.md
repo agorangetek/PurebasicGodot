@@ -706,6 +706,39 @@ wrapper cannot see silently becomes a module-local. The wrapper then compiles
 cleanly and does nothing at all. It caught exactly that class of bug while this
 was being built.
 
+### Calling a builtin type's method, or an `@GlobalScope` function
+
+Engine *classes* live in ClassDB, which is why they need `Register_<Class>_Binds()`
+and a level to wait for. A builtin type's methods and the `@GlobalScope`
+functions are not in ClassDB at all — Godot hands them out by type plus hash, and
+they exist at every initialization level. So there is nothing to list in
+`GDEX_ResolveBinds()` and nothing to wait for:
+
+```purebasic
+; Vector2.length()
+Protected mb.i = GDEX_BuiltinMethodBind(#VECTOR2, "length", 466405837)
+Protected f.GDExtensionPtrBuiltInMethod = mb
+Protected r.d
+f(*v, 0, @r, 0)                       ; result comes back through @r
+
+; @GlobalScope.deg_to_rad(float)
+Protected uf.i = GDEX_UtilityFunctionBind("deg_to_rad", 2140049587)
+Protected g.GDExtensionPtrUtilityFunction = uf
+Protected Dim a.i(0)
+a(0) = *deg
+g(@r, @a(0), 1)
+```
+
+Both call conventions are one array of argument pointers — the same shape the
+generic dispatcher uses — so a callee's own signature is all that differs.
+
+**Two traps are worth knowing, both of which cost a crash here.** The recovered
+`gdextension_interface.pbi` records parameter *names*, not types, and these two
+getters do not take what they look like they take:
+`variant_get_ptr_builtin_method` wants a **StringName**, and so does
+`variant_get_ptr_utility_function`, despite its parameter being called
+`p_function`. Both must be checked against Godot's header.
+
 ### Emitting a signal
 
 ```purebasic
@@ -1045,8 +1078,16 @@ mixing a `Vector2` argument with a float and returning a `Rect2`.
       `Callable`, `Signal` and the `Packed*Array` family share the path but are
       untested, and `Object` still needs a `RefCounted` decision for returns.
       See [What is not covered](#what-is-not-covered).
-- [ ] **Builtin and utility methods.** A `Vector2` crosses as data, but
-      `Vector2.length()` and `@GlobalScope` functions cannot be called.
+- [x] **Builtin and utility methods are callable.** `GDEX_BuiltinMethodBind`
+      and `GDEX_UtilityFunctionBind` resolve them by type plus hash, needing no
+      registration, and both are verified end to end (`Vector2(3,4).length()`
+      gives 5.0; `deg_to_rad(180)` gives π).
+- [ ] **Generating those wrappers.** The runtime supports every builtin method
+      and utility function now, but nothing generates typed wrappers for them
+      yet, so each call is written by hand as above. 634 of the 999 builtin
+      methods and 77 of the 114 utility functions are expressible in the
+      current type set; the rest want `Variant`, `Callable` or a `Packed*Array`
+      and are unreachable until those are driven.
 - [ ] **One virtual.** `_process` is wired; no other engine virtual is.
 - [x] **Forgetting a resolver is no longer silent.** A wrapper whose bind was
       never resolved reports `class::method` and the remedy, once per method.

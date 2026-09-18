@@ -80,6 +80,8 @@ Global g_to_int.GDExtensionTypeFromVariantConstructorFunc
 
 Global g_string_name_new.GDExtensionInterfaceStringNameNewWithUtf8Chars
 Global g_variant_get_ptr_destructor.GDExtensionInterfaceVariantGetPtrDestructor
+Global g_variant_get_ptr_builtin_method.GDExtensionInterfaceVariantGetPtrBuiltinMethod
+Global g_variant_get_ptr_utility_function.GDExtensionInterfaceVariantGetPtrUtilityFunction
 Global g_string_new.GDExtensionInterfaceStringNewWithUtf8Chars
 Global g_string_to_utf8.GDExtensionInterfaceStringToUtf8Chars
 
@@ -185,6 +187,43 @@ Procedure GDEX_ReportUnresolved(class_name.s, method_name.s)
             "       or this engine build has no such method - pb_gdext_wizard --check tells them apart.")
 EndProcedure
 
+; Defined below with the other StringName helpers; the resolvers under it need
+; it, and PureBasic wants a procedure declared before it is called.
+Declare GDEX_SNFrom(*sn.GodotStringName, text.s)
+
+; ---- Builtin-type methods and @GlobalScope functions ----------------------
+;
+; Godot hands these out by type plus hash rather than through ClassDB, so there
+; is no class to register and no bind to list in GDEX_ResolveBinds(). Unlike a
+; scene class's MethodBind they exist at every initialization level, which is
+; why they need no registration step at all - the pointer is looked up on first
+; use and the callee caches it.
+;
+; Both take a StringName for the member name in the interface's own terms, so
+; the caller passes text and this builds the StringName.
+
+Procedure.i GDEX_BuiltinMethodBind(vtype.l, method_name.s, hash.q)
+  If Not g_variant_get_ptr_builtin_method
+    ProcedureReturn 0
+  EndIf
+  Protected sn.GodotStringName
+  GDEX_SNFrom(sn, method_name)
+  ProcedureReturn g_variant_get_ptr_builtin_method(vtype, @sn, hash)
+EndProcedure
+
+Procedure.i GDEX_UtilityFunctionBind(function_name.s, hash.q)
+  If Not g_variant_get_ptr_utility_function
+    ProcedureReturn 0
+  EndIf
+  ; A StringName, NOT a C string, even though the recovered transcription's
+  ; parameter name (*p_function) suggests otherwise. Checked against the 4.7
+  ; header, which the transcription simply does not record the type of. Passing
+  ; a UTF-8 buffer here segfaults inside Godot, which dereferences it as one.
+  Protected sn.GodotStringName
+  GDEX_SNFrom(sn, function_name)
+  ProcedureReturn g_variant_get_ptr_utility_function(@sn, hash)
+EndProcedure
+
 ; ---- Godot String, from PureBasic text and back ---------------------------
 ;
 ; A native String is 8 bytes of handle onto Godot's own storage, so it cannot be
@@ -272,6 +311,8 @@ Procedure load_api(*p_get_proc_address)
 
   RESOLVE(g_string_name_new,                "string_name_new_with_utf8_chars")
   RESOLVE(g_variant_get_ptr_destructor,     "variant_get_ptr_destructor")
+  RESOLVE(g_variant_get_ptr_builtin_method, "variant_get_ptr_builtin_method")
+  RESOLVE(g_variant_get_ptr_utility_function, "variant_get_ptr_utility_function")
   RESOLVE(g_string_new,                     "string_new_with_utf8_chars")
   RESOLVE(g_string_to_utf8,                 "string_to_utf8_chars")
 
