@@ -12,4 +12,7 @@ tools/pb_gdext_wizard
 generated/*.pbi
 !generated/helpers/
 
+# Godot's editor import cache, one per bundled project (demo/, skeleton/, selftest/)
+.godot/
+
 .DS_Store

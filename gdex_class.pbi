@@ -1198,6 +1198,14 @@ Procedure GDEX_UnregisterSingletonsAt(level.l)
   For i = gdex_singleton_count - 1 To 0 Step -1
     If gdex_singleton_level(i) = level
       GD_UnregisterSingleton(gdex_singleton_name(i), gdex_singleton_obj(i))
+      ; Unregistering drops the Engine's NAME for the instance; it does not
+      ; destroy the Object the framework created for it. Leave it and the
+      ; instance is still in ObjectDB when Godot checks for leaks at exit.
+      ; object_destroy runs the instance's own destructor, so a class with
+      ; free_func (gotcha 4) releases its managed members here too.
+      If gdex_singleton_obj(i) And g_object_destroy
+        g_object_destroy(gdex_singleton_obj(i))
+      EndIf
       For j = i To gdex_singleton_count - 2
         gdex_singleton_name(j) = gdex_singleton_name(j + 1)
         gdex_singleton_obj(j) = gdex_singleton_obj(j + 1)

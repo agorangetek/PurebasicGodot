@@ -91,6 +91,7 @@ Global g_object_method_bind_ptrcall.GDExtensionInterfaceObjectMethodBindPtrcall
 Global g_ptr_object_method_bind_ptrcall.i = 0
 Global g_object_set_instance.GDExtensionInterfaceObjectSetInstance
 Global g_object_set_instance_binding.GDExtensionInterfaceObjectSetInstanceBinding
+Global g_object_destroy.GDExtensionInterfaceObjectDestroy
 Global g_global_get_singleton.GDExtensionInterfaceGlobalGetSingleton
 
 Global g_classdb_construct_object3.GDExtensionInterfaceClassdbConstructObject3
@@ -204,6 +205,7 @@ Procedure load_api(*p_get_proc_address)
   g_ptr_object_method_bind_ptrcall = g_object_method_bind_ptrcall
   RESOLVE(g_object_set_instance,            "object_set_instance")
   RESOLVE(g_object_set_instance_binding,    "object_set_instance_binding")
+  RESOLVE(g_object_destroy,                 "object_destroy")
   RESOLVE(g_global_get_singleton,           "global_get_singleton")
 
   RESOLVE(g_classdb_construct_object3,      "classdb_construct_object3")

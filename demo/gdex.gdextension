@@ -1,0 +1,10 @@
+[configuration]
+
+entry_symbol = "gdexample_library_init"
+compatibility_minimum = "4.4"
+reloadable = true
+
+[libraries]
+
+macos.debug = "res://libgdexample.dylib"
+macos.release = "res://libgdexample.dylib"
