@@ -36,7 +36,7 @@ Prototype GDEXProcess(*self, delta.d)
 Prototype GDEXNotify(*self, what.l)
 ; A vararg method's callee: the instance, Godot's array of Variant pointers, the
 ; return slot (as in the generic shape), and how many arguments were passed.
-Prototype GDEXVararg(*self, *args, *out, argc.i)
+Prototype GDEXVararg(*self, *args, *out, argc.i, *err)
 
 Prototype GDEXVoid0(*self)
 Prototype GDEXVoid1F(*self, v.d)
@@ -119,15 +119,12 @@ Global gdex_engine_register_bind.i = 0
 Global gdex_engine_unregister_bind.i = 0
 Global gdex_engine_binds_done.l = #False
 
-; The pending error a vararg handler can raise. Declared HERE, above every
-; procedure that touches them, and that placement is load-bearing: PureBasic
-; invents a procedure-local for a name it has not seen a Global for yet, so
-; with these declared further down GDEX_MethodCall silently got its own copy,
-; the dispatcher read 0 forever, and the handler's write went nowhere. Measured,
-; not theorised - the handler printed 4 and the dispatcher 0 in the same call.
-Global gdex_vararg_err.l = #GDEXTENSION_CALL_OK
-Global gdex_vararg_arg.l = 0
-Global gdex_vararg_expect.l = 0
+; A vararg handler is handed Godot's own GDExtensionCallError slot and writes
+; it directly, so there is deliberately NO framework state here. The first
+; version stashed the pending error in three globals: two threads calling two
+; vararg methods at once could tread on each other, and the globals also had to
+; be declared above their first use or PureBasic invented a procedure-local and
+; the whole path silently did nothing. Passing the pointer removes both.
 
 ; Node.set_process / set_physics_process / get_process_delta_time. Used only by
 ; the notification-based _process path and by GDEX_EnablePhysics, which run at
@@ -765,9 +762,6 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         *ce\argument = 0
         *ce\expected = 0
       EndIf
-      gdex_vararg_err = #GDEXTENSION_CALL_OK
-      gdex_vararg_arg = 0
-      gdex_vararg_expect = 0
       Protected *vob = 0
       If *m\ret_size > 0
         *vob = AllocateMemory(*m\ret_size)
@@ -776,24 +770,19 @@ ProcedureC GDEX_MethodCall(*method_userdata, *instance, *args, arg_count.q, *r_r
         EndIf
       EndIf
       Protected vf.GDEXVararg = *m\func
-      vf(*instance, *args, *vob, arg_count)
-      If gdex_vararg_err <> #GDEXTENSION_CALL_OK
-        If *r_error
-          Protected *ce2.GDExtensionCallError = *r_error
-          *ce2\error = gdex_vararg_err
-          *ce2\argument = gdex_vararg_arg
-          *ce2\expected = gdex_vararg_expect
+      vf(*instance, *args, *vob, arg_count, *r_error)
+      ; Read back the slot the handler was given, rather than a copy of our own.
+      ; Say it out loud too: Godot takes r_error back, but a GDScript caller
+      ; that ignores the result turns a rejected call into a silent nothing.
+      If *r_error
+        Protected *ce2.GDExtensionCallError = *r_error
+        If *ce2\error <> #GDEXTENSION_CALL_OK
+          Protected vmsg.s = "[gdex] variadic call rejected by its handler: error "
+          vmsg + Str(*ce2\error)
+          vmsg + ", argument " + Str(*ce2\argument)
+          vmsg + ", expected " + Str(*ce2\expected)
+          GDEX_Fail(vmsg)
         EndIf
-        ; Say it out loud as well. Godot takes r_error back, but a GDScript
-        ; caller that ignores the result turns a rejected call into a silent
-        ; nothing - the same silent-failure shape the rest of this framework
-        ; reports rather than allows. There is no StringName-to-text helper
-        ; here, so the method is identified by its error rather than its name.
-        Protected vmsg.s = "[gdex] variadic call rejected by its handler: error "
-        vmsg + Str(gdex_vararg_err)
-        vmsg + ", argument " + Str(gdex_vararg_arg)
-        vmsg + ", expected " + Str(gdex_vararg_expect)
-        GDEX_Fail(vmsg)
       EndIf
       If *vob
         GDEX_WrapVariant(*r_ret, *m\ret_type, *vob)
@@ -967,10 +956,14 @@ EndProcedure
 ; the call returns.
 ; ===========================================================================
 
-Procedure GDEX_VarargFail(code.l, argument.l = 0, expected.l = 0)
-  gdex_vararg_err = code
-  gdex_vararg_arg = argument
-  gdex_vararg_expect = expected
+Procedure GDEX_VarargFail(*err, code.l, argument.l = 0, expected.l = 0)
+  If Not *err
+    ProcedureReturn
+  EndIf
+  Protected *ce.GDExtensionCallError = *err
+  *ce\error = code
+  *ce\argument = argument
+  *ce\expected = expected
 EndProcedure
 
 Procedure GDEX_AddMethodEntry(method_name.s, func.i, shape.l, arg_meta.l)

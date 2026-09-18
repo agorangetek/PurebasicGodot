@@ -721,7 +721,7 @@ this needs no inline C and no assembly:
 ```purebasic
 ClassDB::bind_vararg(D_METHOD("sum"), @GDExample_sum(), #FLOAT)
 
-Procedure GDExample_sum(*self.GDExample, *args, *out, argc.i)
+Procedure GDExample_sum(*self.GDExample, *args, *out, argc.i, *err)
   Protected k, total.d
   For k = 0 To argc - 1 : total + GDEX_ArgDouble(*args, k) : Next k
   PokeD(*out, total)
@@ -734,7 +734,8 @@ building a typed ptrcall this shape could not receive.
 
 **A bad call has two possible answers and they are different channels.**
 
-`GDEX_VarargFail(code, argument, expected)` sets Godot's `r_error`, and that is
+`GDEX_VarargFail(*err, code, argument, expected)` writes Godot's `r_error` -
+the slot the dispatcher hands the handler - and that is
 the **hard-failure** channel: GDScript aborts the calling function, exactly as it
 does for an engine method that rejects a call. Godot renders the error itself
 from the fields the handler supplied:

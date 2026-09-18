@@ -329,7 +329,7 @@ EndProcedure
 ; a counted array becomes the right shape.
 
 ; (Variant...) -> float
-Procedure GDBouncer_sum(*self.GDBouncer, *args, *out, argc.i)
+Procedure GDBouncer_sum(*self.GDBouncer, *args, *out, argc.i, *err)
   Protected k, total.d
   For k = 0 To argc - 1
     total + GDEX_ArgDouble(*args, k)
@@ -340,9 +340,9 @@ EndProcedure
 ; (Variant...) -> float, but only from two arguments up. A short call is a
 ; caller error, so it is reported through Godot's r_error rather than answered
 ; with a wrong number.
-Procedure GDBouncer_span_of(*self.GDBouncer, *args, *out, argc.i)
+Procedure GDBouncer_span_of(*self.GDBouncer, *args, *out, argc.i, *err)
   If argc < 2
-    GDEX_VarargFail(#GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS, 0, 2)
+    GDEX_VarargFail(*err, #GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS, 0, 2)
     PokeD(*out, 0.0)
     ProcedureReturn
   EndIf
@@ -354,7 +354,7 @@ EndProcedure
 ; running. Godot has no "soft error" - setting r_error IS the hard-failure
 ; channel and GDScript aborts on it - so returning a value and rejecting the
 ; call are alternatives, and this is the returning one.
-Procedure GDBouncer_span_lenient(*self.GDBouncer, *args, *out, argc.i)
+Procedure GDBouncer_span_lenient(*self.GDBouncer, *args, *out, argc.i, *err)
   If argc < 2
     Protected wmsg.s = "[gdex] span_lenient: expected 2 arguments, got "
     wmsg + Str(argc)
